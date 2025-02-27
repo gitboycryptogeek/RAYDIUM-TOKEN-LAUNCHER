@@ -1,0 +1,50 @@
+{
+  "name": "raydium-token-launcher",
+  "version": "1.0.0",
+  "description": "A simplified Raydium token launcher with React UI",
+  "main": "dist/server.js",
+  "scripts": {
+    "build:backend": "tsc",
+    "start:backend": "node dist/server.js",
+    "dev:backend": "nodemon --exec ts-node backend/server.ts",
+    "start:frontend": "cd frontend && npm start",
+    "build:frontend": "cd frontend && npm run build",
+    "install:all": "npm install && cd frontend && npm install",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run start:frontend\"",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "build": "npm run build:backend && npm run build:frontend"
+  },
+  "keywords": [
+    "raydium",
+    "solana",
+    "token",
+    "pool",
+    "liquidity"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@metaplex-foundation/js": "^0.20.1",
+    "@metaplex-foundation/mpl-token-metadata": "^3.4.0",
+    "@raydium-io/raydium-sdk-v2": "latest",
+    "@solana/spl-token": "^0.3.8",
+    "@solana/web3.js": "^1.78.0",
+    "bn.js": "^5.2.1",
+    "cors": "^2.8.5",
+    "decimal.js": "^10.4.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^20.6.0",
+    "concurrently": "^8.2.1",
+    "express-rate-limit": "^7.5.0",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}

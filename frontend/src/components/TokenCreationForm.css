@@ -1,0 +1,172 @@
+/* TokenCreationForm.css */
+.token-form-container {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 24px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  
+  .token-form-container h2 {
+    margin-top: 0;
+    margin-bottom: 24px;
+    color: #333;
+    text-align: center;
+  }
+  
+  .form-section {
+    margin-bottom: 24px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 16px;
+  }
+  
+  .form-section h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: #444;
+    font-size: 18px;
+  }
+  
+  .form-group {
+    margin-bottom: 16px;
+  }
+  
+  .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #555;
+  }
+  
+  .form-group input[type="text"],
+  .form-group input[type="number"],
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+  }
+  
+  .form-group input[type="text"]:focus,
+  .form-group input[type="number"]:focus,
+  .form-group textarea:focus {
+    border-color: #9945FF;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(153, 69, 255, 0.1);
+  }
+  
+  .form-group small {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #777;
+  }
+  
+  .range-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .range-slider {
+    flex-grow: 1;
+    height: 6px;
+    background: #ddd;
+    outline: none;
+    border-radius: 3px;
+    -webkit-appearance: none;
+  }
+  
+  .range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #9945FF;
+    cursor: pointer;
+  }
+  
+  .range-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #9945FF;
+    cursor: pointer;
+    border: none;
+  }
+  
+  .range-value {
+    min-width: 40px;
+    text-align: center;
+    font-weight: 600;
+    color: #9945FF;
+  }
+  
+  .price-preview {
+    background-color: #f8f9ff;
+    border: 1px solid #e6e8ff;
+    border-radius: 6px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+  
+  .price-preview h4 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    color: #444;
+    font-size: 16px;
+  }
+  
+  .price-preview p {
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  
+  .price-preview small {
+    font-size: 12px;
+    color: #777;
+  }
+  
+  .submit-btn {
+    width: 100%;
+    padding: 12px;
+    background-color: #9945FF;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .submit-btn:hover {
+    background-color: #8a35f0;
+  }
+  
+  .submit-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+  
+  .error-message {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+  
+  .success-message {
+    background-color: #dcfce7;
+    color: #15803d;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }

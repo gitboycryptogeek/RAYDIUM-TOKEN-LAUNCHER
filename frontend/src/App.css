@@ -1,0 +1,12 @@
+/* App.css */
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #f8f9fa;
+    color: #333;
+  }
+  
+  .App {
+    min-height: 100vh;
+    padding: 20px 0;
+  }

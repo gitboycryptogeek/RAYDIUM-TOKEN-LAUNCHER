@@ -1,0 +1,92 @@
+.wallet-connection-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 6px;
+    width: 100%;
+  }
+  
+  .wallet-error {
+    background-color: #ffebee;
+    color: #d32f2f;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  
+  .connect-wallet-btn {
+    background-color: #3f51b5;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .connect-wallet-btn:hover:not(:disabled) {
+    background-color: #303f9f;
+  }
+  
+  .connect-wallet-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  
+  .wallet-connected {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .wallet-address {
+    background-color: #f5f5f5;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 14px;
+  }
+  
+  .wallet-balance {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  
+  .disconnect-btn {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .disconnect-btn:hover {
+    background-color: #d32f2f;
+  }
+  
+  /* Additional compact styles for embedding in header */
+  .header .wallet-connection-compact {
+    padding: 0;
+  }
+  
+  .header .wallet-connected {
+    justify-content: flex-end;
+  }
+  
+  @media (max-width: 768px) {
+    .wallet-connected {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 5px;
+    }
+    
+    .disconnect-btn {
+      align-self: flex-start;
+    }
+  }

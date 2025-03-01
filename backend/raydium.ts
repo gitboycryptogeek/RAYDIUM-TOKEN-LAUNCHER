@@ -3,23 +3,34 @@ import BN from 'bn.js';
 import Decimal from 'decimal.js';
 import { 
   Raydium, TxVersion, TokenAmount, toToken, Percent,
-  ApiV3PoolInfoStandardItem, AmmV4Keys, AmmV5Keys,
-  MARKET_STATE_LAYOUT_V3, AMM_V4, OPEN_BOOK_PROGRAM, 
-  FEE_DESTINATION_ID, DEVNET_PROGRAM_ID
+  ApiV3PoolInfoStandardItem, ApiV3PoolInfoStandardItemCpmm, CpmmKeys,
+  FEE_DESTINATION_ID, DEVNET_PROGRAM_ID, LOCK_CPMM_PROGRAM, LOCK_CPMM_AUTH,
+  CREATE_CPMM_POOL_PROGRAM, CREATE_CPMM_POOL_FEE_ACC, getCpmmPdaAmmConfigId,
+  CurveCalculator, CpmmRpcData
 } from '@raydium-io/raydium-sdk-v2';
 import { connection, keypair, CLUSTER } from './config';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { TokenInfo } from './token';
+import { TokenInfo, getTokenBalance } from './token';
 import fs from 'fs';
 import path from 'path';
+import { Keypair } from '@solana/web3.js';
 
 // Database file path for storing local pool data
 const DATA_DIR = path.join(__dirname, '../data');
 const POOLS_FILE = path.join(DATA_DIR, 'pools.json');
 
 // Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function ensureDataDirExists() {
+  if (!fs.existsSync(DATA_DIR)) {
+    console.log(`Creating data directory: ${DATA_DIR}`);
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  
+  // Create empty pools file if it doesn't exist
+  if (!fs.existsSync(POOLS_FILE)) {
+    console.log(`Creating empty pools file: ${POOLS_FILE}`);
+    fs.writeFileSync(POOLS_FILE, JSON.stringify([], null, 2));
+  }
 }
 
 // Initialize Raydium SDK
@@ -30,14 +41,6 @@ async function initSdk() {
     cluster: CLUSTER === 'mainnet' ? 'mainnet' : 'devnet'
   });
 }
-
-// Valid AMM program check
-const VALID_PROGRAM_ID = new Set([
-  AMM_V4.toBase58(),
-  DEVNET_PROGRAM_ID.AmmV4.toBase58()
-]);
-
-const isValidAmm = (id: string) => VALID_PROGRAM_ID.has(id);
 
 // Helper function to check if a file exists and is not empty
 function fileExistsWithData(filePath: string): boolean {
@@ -53,156 +56,99 @@ function fileExistsWithData(filePath: string): boolean {
   }
 }
 
-// Helper function to read pools data
-function readPoolsData(): any[] {
-  if (!fileExistsWithData(POOLS_FILE)) {
-    return [];
-  }
+// Improved function to read pools data with better error handling
+export function readPoolsData(): any[] {
+  ensureDataDirExists();
+  
   try {
+    if (!fs.existsSync(POOLS_FILE)) {
+      console.log(`Pools file doesn't exist, returning empty array`);
+      return [];
+    }
+    
     const data = fs.readFileSync(POOLS_FILE, 'utf-8');
-    return JSON.parse(data);
+    
+    // Handle empty file
+    if (!data || data.trim() === '') {
+      console.log(`Pools file is empty, returning empty array`);
+      return [];
+    }
+    
+    try {
+      const parsed = JSON.parse(data);
+      
+      if (!Array.isArray(parsed)) {
+        console.warn(`Pools data is not an array, resetting to empty array`);
+        fs.writeFileSync(POOLS_FILE, JSON.stringify([], null, 2));
+        return [];
+      }
+      
+      return parsed;
+    } catch (parseError) {
+      console.error(`Error parsing pools data, resetting file:`, parseError);
+      fs.writeFileSync(POOLS_FILE, JSON.stringify([], null, 2));
+      return [];
+    }
   } catch (error) {
     console.error('Error reading pools data:', error);
     return [];
   }
 }
 
-// Helper function to write pools data
-function writePoolsData(pools: any[]): void {
+// Improved function to write pools data with backup
+export function writePoolsData(pools: any[]): void {
+  ensureDataDirExists();
+  
   try {
+    // Validate pools is an array
+    if (!Array.isArray(pools)) {
+      console.error('Invalid pools data (not an array)');
+      return;
+    }
+    
+    // Create a backup of the current file if it exists
+    if (fs.existsSync(POOLS_FILE)) {
+      const backupPath = `${POOLS_FILE}.backup`;
+      fs.copyFileSync(POOLS_FILE, backupPath);
+    }
+    
+    // Write the new data
     fs.writeFileSync(POOLS_FILE, JSON.stringify(pools, null, 2));
+    console.log(`Successfully wrote ${pools.length} pools to ${POOLS_FILE}`);
   } catch (error) {
     console.error('Error writing pools data:', error);
   }
 }
 
-// Market & Pool Operations
-// Enhanced createMarket function with better error handling and retry logic
-export async function createMarket(baseMint: string, quoteMint: string, lotSize: number = 1, tickSize: number = 0.01) {
-  try {
-    console.log(`Creating market for ${baseMint} / ${quoteMint}`);
-    const raydium = await initSdk();
-    
-    // Get token info
-    const baseInfo = await raydium.token.getTokenInfo(baseMint);
-    const quoteInfo = await raydium.token.getTokenInfo(quoteMint);
-    
-    console.log(`Base token decimals: ${baseInfo.decimals}, Quote token decimals: ${quoteInfo.decimals}`);
-    
-    // Check balance first
-    const walletBalance = await connection.getBalance(keypair.publicKey);
-    console.log(`Wallet balance: ${walletBalance / 1e9} SOL`);
-    
-    if (walletBalance < 0.1 * 1e9) {
-      throw new Error('Insufficient SOL balance. Need at least 0.1 SOL to create a market.');
-    }
-    
-    // Try multiple lot/tick size combinations if needed
-    const attempts = [
-      { lotSize: 0.01, tickSize: 0.0001 }, // Default for tokens with 9 decimals
-      { lotSize: 0.1, tickSize: 0.001 },   // Alternative #1
-      { lotSize: 1, tickSize: 0.01 },      // Alternative #2
-      { lotSize: 0.001, tickSize: 0.00001 } // Alternative #3
-    ];
-    
-    let lastError = null;
-    
-    // Try each lot/tick size combination
-    for (const attempt of attempts) {
-      try {
-        console.log(`Trying with lot size: ${attempt.lotSize}, tick size: ${attempt.tickSize}`);
-        
-        const { execute, extInfo } = await raydium.marketV2.create({
-          baseInfo: {
-            mint: new PublicKey(baseMint),
-            decimals: baseInfo.decimals,
-          },
-          quoteInfo: {
-            mint: new PublicKey(quoteMint),
-            decimals: quoteInfo.decimals,
-          },
-          lotSize: attempt.lotSize,
-          tickSize: attempt.tickSize,
-          dexProgramId: CLUSTER === 'mainnet' ? OPEN_BOOK_PROGRAM : DEVNET_PROGRAM_ID.OPENBOOK_MARKET,
-          txVersion: TxVersion.LEGACY,
-        });
-        
-        // Execute transactions
-        console.log('Executing market creation transactions...');
-        try {
-          const txIds = await execute({ sequentially: true });
-          
-          console.log('Market created successfully with transactions:', txIds);
-          
-          return {
-            marketId: extInfo.address.marketId.toBase58(),
-            baseMint,
-            baseName: baseInfo.name || 'Unknown',
-            baseSymbol: baseInfo.symbol || 'UNK',
-            quoteMint,
-            quoteName: quoteInfo.name || 'Unknown',
-            quoteSymbol: quoteInfo.symbol || 'UNK',
-            transactions: txIds
-          };
-        } catch (execError) {
-          const errorMessage = execError instanceof Error ? execError.message : String(execError);
-          console.error(`Execution failed with lot=${attempt.lotSize}, tick=${attempt.tickSize}:`, errorMessage);
-          lastError = execError instanceof Error ? execError : new Error(String(execError));
-          
-          // Continue to next attempt, don't throw here
-        }
-      } catch (attemptError) {
-        const errorMessage = attemptError instanceof Error ? attemptError.message : String(attemptError);
-        console.error(`Market creation attempt failed with lot=${attempt.lotSize}, tick=${attempt.tickSize}:`, errorMessage);
-        lastError = attemptError instanceof Error ? attemptError : new Error(String(attemptError));
-      }
-      
-      // Short delay before next attempt
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    // If we get here, all attempts failed
-    console.error('All market creation attempts failed');
-    
-    let errorMessage = 'Market creation failed after multiple attempts';
-    if (lastError instanceof Error) {
-      errorMessage += `: ${lastError.message}`;
-      
-      // Check for specific error types
-      if (lastError.message.includes('Custom program error: 0x1')) {
-        errorMessage = 'Market creation failed: Insufficient SOL or account already in use';
-      } else if (lastError.message.includes('Transaction too large')) {
-        errorMessage = 'Market creation failed: Transaction too large';
-      }
-    }
-    
-    throw new Error(errorMessage);
-  } catch (error) {
-    console.error('Error creating market:', error);
-    throw error;
-  }
+// Helper to check if CPMM pool program ID is valid
+function isValidCpmm(programId: string): boolean {
+  // Check if it's a valid CPMM program
+  return [
+    CREATE_CPMM_POOL_PROGRAM.toString(),
+    DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM.toString()
+  ].includes(programId);
 }
 
-// This fixes the BN assertion errors in the createPool function
-export async function createPool(marketId: string, baseAmount: number, quoteAmount: number) {
+// Create a CPMM pool directly
+export async function createPool(baseMint: string, quoteMint: string, baseAmount: number, quoteAmount: number) {
   try {
-    console.log(`Creating pool for market ${marketId}`);
+    console.log(`Creating CPMM pool for ${baseMint} / ${quoteMint}`);
+    console.log(`Base amount: ${baseAmount}, Quote amount: ${quoteAmount}`);
+    
     const raydium = await initSdk();
     
-    // Get market info
-    const marketBufferInfo = await connection.getAccountInfo(new PublicKey(marketId));
-    if (!marketBufferInfo) {
-      throw new Error('Market not found');
+    // Get token info
+    const baseMintInfo = await raydium.token.getTokenInfo(baseMint);
+    const quoteMintInfo = await raydium.token.getTokenInfo(quoteMint);
+    
+    if (!baseMintInfo || !quoteMintInfo) {
+      throw new Error(`Failed to get token information for ${baseMint} or ${quoteMint}`);
     }
     
-    const { baseMint, quoteMint } = MARKET_STATE_LAYOUT_V3.decode(marketBufferInfo.data);
-    
-    // Get token info
-    const baseMintInfo = await raydium.token.getTokenInfo(baseMint.toBase58());
-    const quoteMintInfo = await raydium.token.getTokenInfo(quoteMint.toBase58());
+    console.log(`Base token: ${baseMintInfo.symbol || 'Unknown'} (${baseMintInfo.decimals} decimals)`);
+    console.log(`Quote token: ${quoteMintInfo.symbol || 'Unknown'} (${quoteMintInfo.decimals} decimals)`);
     
     // Convert amounts to BN safely
-    // Fix: Convert to string first to avoid BN.js assertion errors with floating point numbers
     const baseAmountRaw = baseAmount * Math.pow(10, baseMintInfo.decimals);
     const quoteAmountRaw = quoteAmount * Math.pow(10, quoteMintInfo.decimals);
     
@@ -210,56 +156,126 @@ export async function createPool(marketId: string, baseAmount: number, quoteAmou
     const baseAmountBN = new BN(Math.floor(baseAmountRaw).toString());
     const quoteAmountBN = new BN(Math.floor(quoteAmountRaw).toString());
     
-    console.log(`Base amount: ${baseAmountBN.toString()} (${baseAmount} tokens)`);
-    console.log(`Quote amount: ${quoteAmountBN.toString()} (${quoteAmount} tokens)`);
+    console.log(`Base amount in raw units: ${baseAmountBN.toString()}`);
+    console.log(`Quote amount in raw units: ${quoteAmountBN.toString()}`);
     
-    // Create pool
-    const { execute, extInfo } = await raydium.liquidity.createPoolV4({
-      programId: CLUSTER === 'mainnet' ? AMM_V4 : DEVNET_PROGRAM_ID.AmmV4,
-      marketInfo: {
-        marketId: new PublicKey(marketId),
-        programId: CLUSTER === 'mainnet' ? OPEN_BOOK_PROGRAM : DEVNET_PROGRAM_ID.OPENBOOK_MARKET,
-      },
-      baseMintInfo: {
-        mint: baseMint,
+    // Check balances to ensure we have enough tokens
+    try {
+      // Skip balance check for SOL (native token)
+      if (baseMint !== 'So11111111111111111111111111111111111111112') {
+        const baseBalance = await getTokenBalance(baseMint, keypair.publicKey.toBase58());
+        if (baseBalance.balance < baseAmount) {
+          throw new Error(`Insufficient ${baseMintInfo.symbol || 'base token'} balance. Have: ${baseBalance.balance}, Need: ${baseAmount}`);
+        }
+      } else {
+        const solBalance = await connection.getBalance(keypair.publicKey);
+        if (solBalance < baseAmountRaw + 10000000) { // Add some for transaction fees
+          throw new Error(`Insufficient SOL balance. Have: ${solBalance/1e9}, Need: ${baseAmount + 0.01}`);
+        }
+      }
+      
+      // Skip balance check for SOL (native token)
+      if (quoteMint !== 'So11111111111111111111111111111111111111112') {
+        const quoteBalance = await getTokenBalance(quoteMint, keypair.publicKey.toBase58());
+        if (quoteBalance.balance < quoteAmount) {
+          throw new Error(`Insufficient ${quoteMintInfo.symbol || 'quote token'} balance. Have: ${quoteBalance.balance}, Need: ${quoteAmount}`);
+        }
+      } else {
+        const solBalance = await connection.getBalance(keypair.publicKey);
+        if (solBalance < quoteAmountRaw + 10000000) { // Add some for transaction fees
+          throw new Error(`Insufficient SOL balance. Have: ${solBalance/1e9}, Need: ${quoteAmount + 0.01}`);
+        }
+      }
+    } catch (balanceError) {
+      console.error('Balance check failed:', balanceError);
+      throw balanceError;
+    }
+    
+    // Get fee configs
+    const feeConfigs = await raydium.api.getCpmmConfigs();
+if (CLUSTER === 'devnet') {
+  feeConfigs.forEach((config) => {
+    config.id = getCpmmPdaAmmConfigId(DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM, config.index).publicKey.toBase58();
+  });
+}
+// Use feeConfigs[0] in the createPool call
+
+    
+    // Use correct program IDs based on environment
+    const programId = CLUSTER === 'devnet' 
+      ? DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM 
+      : CREATE_CPMM_POOL_PROGRAM;
+    
+    const poolFeeAccount = CLUSTER === 'devnet'
+      ? DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC
+      : CREATE_CPMM_POOL_FEE_ACC;
+    
+    console.log(`Using pool program ID: ${programId.toString()}`);
+    console.log(`Using pool fee account: ${poolFeeAccount.toString()}`);
+    console.log('Executing CPMM pool creation...');
+    
+    // Create CPMM pool with exact parameter structure
+    const { execute, extInfo } = await raydium.cpmm.createPool({
+      // Let Raydium generate the poolId
+      poolId: undefined,
+      programId,
+      poolFeeAccount,
+      mintA: {
+        address: baseMint,
         decimals: baseMintInfo.decimals,
+        programId: TOKEN_PROGRAM_ID.toBase58(),
       },
-      quoteMintInfo: {
-        mint: quoteMint,
+      mintB: {
+        address: quoteMint,
         decimals: quoteMintInfo.decimals,
+        programId: TOKEN_PROGRAM_ID.toBase58(),
       },
-      baseAmount: baseAmountBN,
-      quoteAmount: quoteAmountBN,
+      mintAAmount: baseAmountBN,
+      mintBAmount: quoteAmountBN,
       startTime: new BN(0),
+      feeConfig: feeConfigs[0],  // Use the first fee config
+      associatedOnly: false,
+      checkCreateATAOwner: false,
       ownerInfo: {
+        feePayer: keypair.publicKey,
         useSOLBalance: true,
       },
-      associatedOnly: false,
       txVersion: TxVersion.LEGACY,
-      feeDestinationId: CLUSTER === 'mainnet' ? FEE_DESTINATION_ID : DEVNET_PROGRAM_ID.FEE_DESTINATION_ID,
     });
     
-    const { txId } = await execute({ sendAndConfirm: true });
+    console.log('Pool creation transaction prepared, executing...');
+    
+    // Execute transaction with the server keypair
+    const { txId } = await execute({ 
+      sendAndConfirm: true
+    });
+    
+    console.log(`Pool creation transaction confirmed: ${txId}`);
+    
+    // Get pool ID from execution info
+    const poolId = extInfo.address.poolId.toBase58();
+    console.log(`New pool created with ID: ${poolId}`);
     
     // Get additional token info for better UI display
     const poolData = {
-      poolId: extInfo.address.ammId.toBase58(),
+      poolId: poolId,
       txId,
-      marketId,
-      baseMint: baseMint.toBase58(),
+      type: "CPMM",
+      baseMint: baseMint,
       baseName: baseMintInfo.name || 'Unknown',
       baseSymbol: baseMintInfo.symbol || 'UNK',
       baseDecimals: baseMintInfo.decimals,
       baseAmount: baseAmount,
-      quoteMint: quoteMint.toBase58(),
+      quoteMint: quoteMint,
       quoteName: quoteMintInfo.name || 'Unknown',
       quoteSymbol: quoteMintInfo.symbol || 'UNK',
       quoteDecimals: quoteMintInfo.decimals,
       quoteAmount: quoteAmount,
       lpMint: extInfo.address.lpMint.toBase58(),
+      programId: extInfo.address.programId.toBase58(),
       createdAt: new Date().toISOString(),
       owner: keypair.publicKey.toBase58(),
-      initialPrice: quoteAmount / baseAmount, // Add initial price calculation
+      initialPrice: quoteAmount / baseAmount,
     };
 
     // Save pool data to local file database
@@ -267,81 +283,145 @@ export async function createPool(marketId: string, baseAmount: number, quoteAmou
     pools.push(poolData);
     writePoolsData(pools);
     
+    console.log('Pool data saved to local database');
+    
     return poolData;
   } catch (error) {
-    console.error('Error creating pool:', error);
+    console.error('Error creating CPMM pool:', error);
+    
+    // Create a placeholder pool as fallback
+    try {
+      console.log('Creating placeholder pool as fallback...');
+      const placeholderPool = await createPlaceholderPool({
+        mint: baseMint,
+        name: "Unknown",
+        symbol: "UNK",
+        decimals: 9,
+        initialSupply: 0,
+        tokenAccount: ""
+      });
+      return placeholderPool;
+    } catch (placeholderError) {
+      console.error('Error creating placeholder pool:', placeholderError);
+      throw error;
+    }
+  }
+}
+
+// Create a token with CPMM pool
+export async function createTokenWithPool(tokenInfo: TokenInfo, initialSolAmount: number): Promise<any> {
+  try {
+    console.log(`Creating CPMM pool for token ${tokenInfo.name} (${tokenInfo.symbol}) with ${initialSolAmount} SOL`);
+    
+    // Native SOL mint
+    const solMint = 'So11111111111111111111111111111111111111112';
+    
+    // Calculate token amount based on desired price
+    // Default to 10% of token supply 
+    const tokenPoolAmount = tokenInfo.initialSupply * 0.1;
+    console.log(`Using ${tokenPoolAmount} ${tokenInfo.symbol} tokens for the pool`);
+    
+    try {
+      // Ensure we have the token in our balance
+      const tokenBalance = await getTokenBalance(tokenInfo.mint, keypair.publicKey.toBase58());
+      
+      if (tokenBalance.balance < tokenPoolAmount) {
+        console.error(`Not enough token balance. Have: ${tokenBalance.balance}, Need: ${tokenPoolAmount}`);
+        throw new Error(`Insufficient ${tokenInfo.symbol} token balance for pool creation`);
+      }
+      
+      try {
+        // Create the CPMM pool directly
+        const pool = await createPool(
+          tokenInfo.mint,
+          solMint,
+          tokenPoolAmount,
+          initialSolAmount
+        );
+        
+        // Calculate and display initial price
+        const initialPrice = initialSolAmount / tokenPoolAmount;
+        console.log(`Initial token price: ${initialPrice} SOL per ${tokenInfo.symbol}`);
+        
+        return {
+          ...tokenInfo,
+          pool,
+          initialPrice
+        };
+      } catch (poolError) {
+        console.error('Pool creation failed:', poolError);
+        
+        // Create a placeholder pool and return the token info
+        console.log('Creating placeholder pool as fallback...');
+        
+        const placeholderPool = await createPlaceholderPool(tokenInfo);
+        
+        return {
+          ...tokenInfo,
+          pool: placeholderPool,
+          error: 'Pool creation encountered an error. A placeholder pool was created.',
+          errorDetails: poolError instanceof Error ? poolError.message : String(poolError)
+        };
+      }
+    } catch (error) {
+      console.error('Error creating pool:', error);
+      return {
+        ...tokenInfo,
+        pool: null,
+        error: 'Pool creation failed. You can try creating it manually.',
+        errorDetails: error instanceof Error ? error.message : String(error)
+      };
+    }
+  } catch (error) {
+    console.error('Error creating token with pool:', error);
     throw error;
   }
 }
 
-// Liquidity Operations
+// Add liquidity to CPMM pool
 export async function addLiquidity(poolId: string, amountA: number, fixedSide: 'a' | 'b', slippage: number) {
   try {
-    console.log(`Adding liquidity to ${poolId}`);
+    console.log(`Adding liquidity to CPMM pool ${poolId}`);
     const raydium = await initSdk();
     
     // Get pool info
-    let poolInfo: ApiV3PoolInfoStandardItem;
-    let poolKeys: AmmV4Keys | AmmV5Keys | undefined;
+    let poolInfo: ApiV3PoolInfoStandardItemCpmm;
+    let poolKeys: CpmmKeys | undefined;
     
-    if (CLUSTER === 'mainnet') {
-      try {
-        const data = await raydium.api.fetchPoolById({ ids: poolId });
-        poolInfo = data[0] as ApiV3PoolInfoStandardItem;
-      } catch (error) {
-        console.error('Error fetching pool by ID from API, falling back to RPC:', error);
-        const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-        poolInfo = data.poolInfo;
-        poolKeys = data.poolKeys;
-      }
-    } else {
-      const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
+    try {
+      const data = await raydium.cpmm.getPoolInfoFromRpc(poolId);
       poolInfo = data.poolInfo;
       poolKeys = data.poolKeys;
-    }
-    
-    if (!isValidAmm(poolInfo.programId)) {
-      throw new Error('Invalid AMM pool');
+    } catch (error) {
+      console.error('Error fetching CPMM pool info, checking local data:', error);
+      
+      // Check local database for the pool
+      const pools = readPoolsData();
+      const localPool = pools.find(p => p.poolId === poolId);
+      if (!localPool) {
+        throw new Error('Pool not found in local database');
+      }
+      
+      throw new Error('Could not get pool info from RPC and local data is insufficient for this operation');
     }
     
     // Calculate amounts
     const slippagePercent = new Percent(slippage * 100, 10000);
-    const r = raydium.liquidity.computePairAmount({
-      poolInfo,
-      amount: amountA.toString(),
-      baseIn: fixedSide === 'a',
-      slippage: slippagePercent,
-    });
     
-    // Prepare token amounts
-    const amountInA = fixedSide === 'a'
-      ? new TokenAmount(
-          toToken(poolInfo.mintA),
-          new Decimal(amountA).mul(10 ** poolInfo.mintA.decimals).toFixed(0)
-        )
-      : new TokenAmount(
-          toToken(poolInfo.mintA),
-          new Decimal(r.maxAnotherAmount.toExact()).mul(10 ** poolInfo.mintA.decimals).toFixed(0)
-        );
+    // Input amount in tokens with proper decimal places
+    const inputAmount = new BN(
+      new Decimal(amountA)
+        .mul(10 ** (fixedSide === 'a' ? poolInfo.mintA.decimals : poolInfo.mintB.decimals))
+        .toFixed(0, Decimal.ROUND_DOWN)
+    );
     
-    const amountInB = fixedSide === 'b'
-      ? new TokenAmount(
-          toToken(poolInfo.mintB),
-          new Decimal(amountA).mul(10 ** poolInfo.mintB.decimals).toFixed(0)
-        )
-      : new TokenAmount(
-          toToken(poolInfo.mintB),
-          new Decimal(r.maxAnotherAmount.toExact()).mul(10 ** poolInfo.mintB.decimals).toFixed(0)
-        );
-    
-    // Execute transaction
-    const { execute } = await raydium.liquidity.addLiquidity({
+    // Execute add liquidity transaction
+    const { execute } = await raydium.cpmm.addLiquidity({
       poolInfo,
       poolKeys,
-      amountInA,
-      amountInB,
-      otherAmountMin: r.minAnotherAmount,
-      fixedSide,
+      inputAmount,
+      baseIn: fixedSide === 'a',
+      slippage: slippagePercent,
       txVersion: TxVersion.LEGACY,
     });
     
@@ -354,75 +434,56 @@ export async function addLiquidity(poolId: string, amountA: number, fixedSide: '
         mint: poolInfo.mintA.address,
         name: poolInfo.mintA.name || 'Unknown',
         symbol: poolInfo.mintA.symbol || 'UNK',
-        amount: fixedSide === 'a' ? amountA : parseFloat(r.maxAnotherAmount.toExact())
+        amount: fixedSide === 'a' ? amountA : 0 // Actual amount will be calculated by the pool
       },
       tokenB: {
         mint: poolInfo.mintB.address,
         name: poolInfo.mintB.name || 'Unknown',
         symbol: poolInfo.mintB.symbol || 'UNK',
-        amount: fixedSide === 'b' ? amountA : parseFloat(r.maxAnotherAmount.toExact())
+        amount: fixedSide === 'b' ? amountA : 0 // Actual amount will be calculated by the pool
       }
     };
   } catch (error) {
-    console.error('Error adding liquidity:', error);
+    console.error('Error adding liquidity to CPMM pool:', error);
     throw error;
   }
 }
 
+// Remove liquidity from CPMM pool
 export async function removeLiquidity(poolId: string, lpAmount: number, slippage: number) {
   try {
-    console.log(`Removing liquidity from ${poolId}`);
+    console.log(`Removing liquidity from CPMM pool ${poolId}`);
     const raydium = await initSdk();
     
-    // Get pool info
-    let poolInfo: ApiV3PoolInfoStandardItem;
-    let poolKeys: AmmV4Keys | AmmV5Keys | undefined;
+    // Get pool info using CPMM
+    let poolInfo: ApiV3PoolInfoStandardItemCpmm;
+    let poolKeys: CpmmKeys;
     
-    if (CLUSTER === 'mainnet') {
-      try {
-        const data = await raydium.api.fetchPoolById({ ids: poolId });
-        poolInfo = data[0] as ApiV3PoolInfoStandardItem;
-      } catch (error) {
-        console.error('Error fetching pool by ID from API, falling back to RPC:', error);
-        const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-        poolInfo = data.poolInfo;
-        poolKeys = data.poolKeys;
-      }
-    } else {
-      const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
+    try {
+      const data = await raydium.cpmm.getPoolInfoFromRpc(poolId);
       poolInfo = data.poolInfo;
       poolKeys = data.poolKeys;
+    } catch (error) {
+      console.error('Error fetching CPMM pool info:', error);
+      throw new Error('Could not get pool info from RPC');
     }
     
-    if (!isValidAmm(poolInfo.programId)) {
-      throw new Error('Invalid AMM pool');
-    }
-    
-    // Convert LP amount
-    const withdrawLpAmount = new BN(lpAmount * Math.pow(10, poolInfo.lpMint.decimals));
-    
-    // Calculate expected token amounts
-    const [baseRatio, quoteRatio] = [
-      new Decimal(poolInfo.mintAmountA).div(poolInfo.lpAmount || 1),
-      new Decimal(poolInfo.mintAmountB).div(poolInfo.lpAmount || 1),
-    ];
-    
-    const withdrawAmountDe = new Decimal(withdrawLpAmount.toString()).div(10 ** poolInfo.lpMint.decimals);
-    const [withdrawAmountA, withdrawAmountB] = [
-      withdrawAmountDe.mul(baseRatio).mul(10 ** (poolInfo?.mintA.decimals || 0)),
-      withdrawAmountDe.mul(quoteRatio).mul(10 ** (poolInfo?.mintB.decimals || 0)),
-    ];
+    // Convert LP amount to smallest units
+    const lpAmountBN = new BN(
+      new Decimal(lpAmount)
+        .mul(10 ** poolInfo.lpMint.decimals)
+        .toFixed(0, Decimal.ROUND_DOWN)
+    );
     
     // Set slippage
-    const lpSlippage = slippage / 100;
+    const slippagePercent = new Percent(slippage * 100, 10000);
     
-    // Execute transaction
-    const { execute } = await raydium.liquidity.removeLiquidity({
+    // Execute withdraw transaction
+    const { execute } = await raydium.cpmm.withdrawLiquidity({
       poolInfo,
       poolKeys,
-      lpAmount: withdrawLpAmount,
-      baseAmountMin: new BN(withdrawAmountA.mul(1 - lpSlippage).toFixed(0)),
-      quoteAmountMin: new BN(withdrawAmountB.mul(1 - lpSlippage).toFixed(0)),
+      lpAmount: lpAmountBN,
+      slippage: slippagePercent,
       txVersion: TxVersion.LEGACY,
     });
     
@@ -436,60 +497,39 @@ export async function removeLiquidity(poolId: string, lpAmount: number, slippage
         mint: poolInfo.mintA.address,
         name: poolInfo.mintA.name || 'Unknown',
         symbol: poolInfo.mintA.symbol || 'UNK',
-        amount: withdrawAmountA.div(10 ** poolInfo.mintA.decimals).toNumber()
       },
       tokenB: {
         mint: poolInfo.mintB.address,
         name: poolInfo.mintB.name || 'Unknown',
         symbol: poolInfo.mintB.symbol || 'UNK',
-        amount: withdrawAmountB.div(10 ** poolInfo.mintB.decimals).toNumber()
       }
     };
   } catch (error) {
-    console.error('Error removing liquidity:', error);
+    console.error('Error removing liquidity from CPMM pool:', error);
     throw error;
   }
 }
 
-// Swap Operations
+// Swap using CPMM
 export async function swap(poolId: string, inputMint: string, amount: number, fixedSide: 'in' | 'out', slippage: number) {
   try {
-    console.log(`Swapping on pool ${poolId}`);
+    console.log(`Swapping on CPMM pool ${poolId}`);
     const raydium = await initSdk();
     
-    // Get pool info
-    let poolInfo: ApiV3PoolInfoStandardItem;
-    let poolKeys: AmmV4Keys | undefined;
-    let rpcData: any;
+    // Get pool info using CPMM
+    let poolInfo: ApiV3PoolInfoStandardItemCpmm;
+    let poolKeys: CpmmKeys;
+    let rpcData: CpmmRpcData;
     
-    if (CLUSTER === 'mainnet') {
-      try {
-        const data = await raydium.api.fetchPoolById({ ids: poolId });
-        poolInfo = data[0] as ApiV3PoolInfoStandardItem;
-        if (!isValidAmm(poolInfo.programId)) {
-          throw new Error('Invalid AMM pool');
-        }
-        poolKeys = await raydium.liquidity.getAmmPoolKeys(poolId);
-        rpcData = await raydium.liquidity.getRpcPoolInfo(poolId);
-      } catch (error) {
-        console.error('Error fetching pool from API, falling back to RPC:', error);
-        const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-        poolInfo = data.poolInfo;
-        poolKeys = data.poolKeys;
-        rpcData = data.poolRpcData;
-      }
-    } else {
-      const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
+    try {
+      const data = await raydium.cpmm.getPoolInfoFromRpc(poolId);
       poolInfo = data.poolInfo;
       poolKeys = data.poolKeys;
-      rpcData = data.poolRpcData;
+      rpcData = data.rpcData;
+    } catch (error) {
+      console.error('Error fetching CPMM pool info:', error);
+      throw new Error('Could not get pool info from RPC');
     }
-    
-    const [baseReserve, quoteReserve, status] = [
-      rpcData.baseReserve,
-      rpcData.quoteReserve,
-      rpcData.status.toNumber()
-    ];
     
     // Check if input mint matches pool
     if (poolInfo.mintA.address !== inputMint && poolInfo.mintB.address !== inputMint) {
@@ -502,231 +542,90 @@ export async function swap(poolId: string, inputMint: string, amount: number, fi
       : [poolInfo.mintB, poolInfo.mintA];
     
     // Convert amount to smallest units
-    const amountBN = new BN(amount * Math.pow(10, mintIn.decimals));
+    const amountBN = new BN(
+      new Decimal(amount)
+        .mul(10 ** mintIn.decimals)
+        .toFixed(0, Decimal.ROUND_DOWN)
+    );
     
-    if (fixedSide === 'in') {
-      // Fixed input amount
-      const out = raydium.liquidity.computeAmountOut({
-        poolInfo: {
-          ...poolInfo,
-          baseReserve,
-          quoteReserve,
-          status,
-          version: 4,
-        },
-        amountIn: amountBN,
-        mintIn: mintIn.address,
-        mintOut: mintOut.address,
-        slippage: slippage / 100,
-      });
-      
-      // Execute swap
-      const { execute } = await raydium.liquidity.swap({
-        poolInfo,
-        poolKeys,
-        amountIn: amountBN,
-        amountOut: out.minAmountOut,
-        fixedSide: 'in',
-        inputMint: mintIn.address,
-        txVersion: TxVersion.LEGACY,
-      });
-      
-      const { txId } = await execute({ sendAndConfirm: true });
-      
-      return {
-        txId,
-        poolId,
-        inputToken: {
-          mint: mintIn.address,
-          name: mintIn.name || 'Unknown',
-          symbol: mintIn.symbol || 'UNK',
-          amount: amount
-        },
-        outputToken: {
-          mint: mintOut.address,
-          name: mintOut.name || 'Unknown',
-          symbol: mintOut.symbol || 'UNK',
-          amount: new Decimal(out.amountOut.toString()).div(10 ** mintOut.decimals).toNumber(),
-          minAmount: new Decimal(out.minAmountOut.toString()).div(10 ** mintOut.decimals).toNumber()
-        }
-      };
-    } else {
-      // Fixed output amount
-      const out = raydium.liquidity.computeAmountIn({
-        poolInfo: {
-          ...poolInfo,
-          baseReserve,
-          quoteReserve,
-          status,
-          version: 4,
-        },
-        amountOut: amountBN,
-        mintIn: mintIn.address,
-        mintOut: mintOut.address,
-        slippage: slippage / 100,
-      });
-      
-      // Execute swap
-      const { execute } = await raydium.liquidity.swap({
-        poolInfo,
-        poolKeys,
-        amountIn: out.maxAmountIn,
-        amountOut: amountBN,
-        fixedSide: 'out',
-        inputMint: mintIn.address,
-        txVersion: TxVersion.LEGACY,
-      });
-      
-      const { txId } = await execute({ sendAndConfirm: true });
-      
-      return {
-        txId,
-        poolId,
-        inputToken: {
-          mint: mintIn.address,
-          name: mintIn.name || 'Unknown',
-          symbol: mintIn.symbol || 'UNK',
-          amount: new Decimal(out.amountIn.toString()).div(10 ** mintIn.decimals).toNumber(),
-          maxAmount: new Decimal(out.maxAmountIn.toString()).div(10 ** mintIn.decimals).toNumber()
-        },
-        outputToken: {
-          mint: mintOut.address,
-          name: mintOut.name || 'Unknown',
-          symbol: mintOut.symbol || 'UNK',
-          amount: amount
-        }
-      };
-    }
-  } catch (error) {
-    console.error('Error swapping:', error);
-    throw error;
-  }
-}
-
-// Create token with market and pool
-export async function createTokenWithPool(tokenInfo: TokenInfo, initialSolAmount: number): Promise<any> {
-  try {
-    console.log(`Creating market and pool for token ${tokenInfo.name}`);
+    // Calculate swap using CurveCalculator
+    const swapResult = CurveCalculator.swap(
+      amountBN,
+      baseIn ? rpcData.baseReserve : rpcData.quoteReserve,
+      baseIn ? rpcData.quoteReserve : rpcData.baseReserve,
+      rpcData.configInfo!.tradeFeeRate
+    );
     
-    // Create market with SOL
-    const solMint = 'So11111111111111111111111111111111111111112'; // Native SOL mint
+    // Execute swap
+    const { execute } = await raydium.cpmm.swap({
+      poolInfo,
+      poolKeys,
+      baseIn,
+      fixedOut: fixedSide === 'out',
+      inputAmount: amountBN,
+      swapResult,
+      slippage: slippage / 100,
+      txVersion: TxVersion.LEGACY,
+    });
     
-    try {
-      // Step 1: Create the market
-      const market = await createMarket(tokenInfo.mint, solMint);
-      
-      // Step 2: Calculate token amount based on desired price
-      // If initialSolAmount is 1 SOL and we want price of 0.1 SOL per token, we need 10 tokens
-      // Default to 10% of token supply if not specified
-      const tokenPoolAmount = tokenInfo.initialSupply * 0.1;
-      
-      try {
-        // Step 3: Create the pool with proper error handling
-        const pool = await createPool(
-          market.marketId,
-          tokenPoolAmount,
-          initialSolAmount
-        );
-        
-        // Step 4: Calculate and display initial price
-        const initialPrice = initialSolAmount / tokenPoolAmount;
-        console.log(`Initial token price: ${initialPrice} SOL per ${tokenInfo.symbol}`);
-        
-        return {
-          ...tokenInfo,
-          market,
-          pool,
-          initialPrice
-        };
-      } catch (poolError) {
-        console.error('Pool creation failed, but market was created:', poolError);
-        return {
-          ...tokenInfo,
-          market,
-          pool: null,
-          error: 'Pool creation failed. You can try creating it manually.',
-          errorDetails: poolError instanceof Error ? poolError.message : String(poolError)
-        };
+    const { txId } = await execute({ sendAndConfirm: true });
+    
+    return {
+      txId,
+      poolId,
+      inputToken: {
+        mint: mintIn.address,
+        name: mintIn.name || 'Unknown',
+        symbol: mintIn.symbol || 'UNK',
+        amount: amount
+      },
+      outputToken: {
+        mint: mintOut.address,
+        name: mintOut.name || 'Unknown',
+        symbol: mintOut.symbol || 'UNK',
+        amount: new Decimal(swapResult.destinationAmountSwapped.toString()).div(10 ** mintOut.decimals).toNumber(),
       }
-    } catch (marketError) {
-      console.error('Market creation failed:', marketError);
-      return {
-        ...tokenInfo,
-        market: null,
-        pool: null,
-        error: 'Market creation failed. You can try creating it manually.',
-        errorDetails: marketError instanceof Error ? marketError.message : String(marketError)
-      };
-    }
+    };
   } catch (error) {
-    console.error('Error creating token with pool:', error);
+    console.error('Error swapping on CPMM pool:', error);
     throw error;
   }
 }
 
-// Pool Info with validation
+// Get pool info with validation
 export async function getPoolInfo(poolId: string) {
   try {
     // Validate poolId is a valid base58 string
-    if (!poolId || poolId.trim() === '' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(poolId)) {
-      console.log(`Invalid pool ID format: ${poolId}`);
+    if (!poolId || poolId === 'list' || poolId === 'token' || poolId.trim() === '' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(poolId)) {
+      console.log(`Invalid pool ID format or reserved word: ${poolId}`);
       return null; // Return null for invalid pool IDs
     }
     
     const raydium = await initSdk();
     
-    if (CLUSTER === 'mainnet') {
-      try {
-        const data = await raydium.api.fetchPoolById({ ids: poolId });
-        return data[0];
-      } catch (error) {
-        console.error('Error fetching pool from API, falling back to RPC:', error);
-        try {
-          const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-          return {
-            ...data.poolInfo,
-            poolKeys: data.poolKeys,
-            lpBalance: await getLpBalance(poolId, keypair.publicKey.toBase58())
-          };
-        } catch (rpcError) {
-          console.error('RPC fallback also failed:', rpcError);
-          
-          // Check local database for the pool
-          const pools = readPoolsData();
-          const localPool = pools.find(p => p.poolId === poolId);
-          if (localPool) {
-            return {
-              ...localPool,
-              lpBalance: await getLpBalance(poolId, keypair.publicKey.toBase58())
-            };
-          }
-          
-          return null;
-        }
-      }
-    } else {
-      try {
-        const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
+    // Get CPMM pool info
+    try {
+      const data = await raydium.cpmm.getPoolInfoFromRpc(poolId);
+      return {
+        ...data.poolInfo,
+        poolKeys: data.poolKeys,
+        type: "CPMM",
+        lpBalance: await getLpBalance(poolId, keypair.publicKey.toBase58())
+      };
+    } catch (cpmmError) {
+      console.error('Error getting CPMM pool info, checking local database:', cpmmError);
+      
+      // Check local database for the pool
+      const pools = readPoolsData();
+      const localPool = pools.find(p => p.poolId === poolId);
+      if (localPool) {
         return {
-          ...data.poolInfo,
-          poolKeys: data.poolKeys,
+          ...localPool,
           lpBalance: await getLpBalance(poolId, keypair.publicKey.toBase58())
         };
-      } catch (error) {
-        console.error('Error getting pool info from RPC:', error);
-        
-        // Check local database for the pool
-        const pools = readPoolsData();
-        const localPool = pools.find(p => p.poolId === poolId);
-        if (localPool) {
-          return {
-            ...localPool,
-            lpBalance: await getLpBalance(poolId, keypair.publicKey.toBase58())
-          };
-        }
-        
-        return null;
       }
+      
+      return null;
     }
   } catch (error) {
     console.error('Error getting pool info:', error);
@@ -734,7 +633,7 @@ export async function getPoolInfo(poolId: string) {
   }
 }
 
-// Get all pools for a specific token
+// Get pools by token mint address
 export async function getPoolsByToken(mintAddress: string): Promise<any[]> {
   try {
     console.log(`Fetching pools for token ${mintAddress}`);
@@ -743,7 +642,7 @@ export async function getPoolsByToken(mintAddress: string): Promise<any[]> {
     if (CLUSTER === 'mainnet') {
       const raydium = await initSdk();
       try {
-        // Use only the correct method that exists in the API
+        // Use the correct API method
         const pools = await raydium.api.fetchPoolByMints({
           mint1: mintAddress
         });
@@ -790,7 +689,7 @@ export async function getUserPools(): Promise<any[]> {
 async function getLpBalance(poolId: string, ownerAddress: string) {
   try {
     // Skip for invalid pool IDs
-    if (!poolId || poolId.trim() === '' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(poolId)) {
+    if (!poolId || poolId === 'list' || poolId === 'token' || poolId.trim() === '' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(poolId)) {
       return { lpMint: '', balance: 0 };
     }
     
@@ -798,48 +697,20 @@ async function getLpBalance(poolId: string, ownerAddress: string) {
     
     let lpMint: string;
     
-    if (CLUSTER === 'mainnet') {
-      try {
-        const data = await raydium.api.fetchPoolById({ ids: poolId });
-        const poolData = data[0];
-        if ('lpMint' in poolData) {
-          lpMint = poolData.lpMint.address;
-        } else {
-          throw new Error('Pool type not supported');
-        }
-      } catch (error) {
-        console.error('Error fetching pool from API, falling back to RPC:', error);
-        try {
-          const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-          lpMint = data.poolInfo.lpMint.address;
-        } catch (rpcError) {
-          console.error('Error getting LP mint from RPC:', rpcError);
-          
-          // Check local pools data
-          const pools = readPoolsData();
-          const pool = pools.find(p => p.poolId === poolId);
-          if (pool && pool.lpMint) {
-            lpMint = pool.lpMint;
-          } else {
-            return { lpMint: '', balance: 0 };
-          }
-        }
-      }
-    } else {
-      try {
-        const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-        lpMint = data.poolInfo.lpMint.address;
-      } catch (error) {
-        console.error('Error getting pool info from RPC:', error);
-        
-        // Check local pools data
-        const pools = readPoolsData();
-        const pool = pools.find(p => p.poolId === poolId);
-        if (pool && pool.lpMint) {
-          lpMint = pool.lpMint;
-        } else {
-          return { lpMint: '', balance: 0 };
-        }
+    // Try to get LP mint from CPMM pool
+    try {
+      const data = await raydium.cpmm.getPoolInfoFromRpc(poolId);
+      lpMint = data.poolInfo.lpMint.address;
+    } catch (cpmmError) {
+      console.error('Error getting LP mint from CPMM, checking local data:', cpmmError);
+      
+      // Check local pools data
+      const pools = readPoolsData();
+      const pool = pools.find(p => p.poolId === poolId);
+      if (pool && pool.lpMint) {
+        lpMint = pool.lpMint;
+      } else {
+        return { lpMint: '', balance: 0 };
       }
     }
     
@@ -907,12 +778,14 @@ export async function getUserTokens(ownerAddress: string) {
 // Create a placeholder pool for tokens without actual pools
 export async function createPlaceholderPool(tokenInfo: TokenInfo) {
   try {
+    ensureDataDirExists();
+    
     const solMint = 'So11111111111111111111111111111111111111112';
     
     const placeholderPool = {
       poolId: `placeholder-${tokenInfo.mint.slice(0, 8)}`,
       txId: '',
-      marketId: 'pending',
+      type: "CPMM",
       baseMint: tokenInfo.mint,
       baseName: tokenInfo.name || 'Unknown',
       baseSymbol: tokenInfo.symbol || 'UNK',
@@ -923,7 +796,7 @@ export async function createPlaceholderPool(tokenInfo: TokenInfo) {
       quoteSymbol: 'SOL',
       quoteDecimals: 9,
       quoteAmount: 0,
-      lpMint: '',
+      lpMint: `placeholder-lp-${tokenInfo.mint.slice(0, 6)}`,
       createdAt: new Date().toISOString(),
       owner: keypair.publicKey.toBase58(),
       initialPrice: 0,
@@ -941,6 +814,9 @@ export async function createPlaceholderPool(tokenInfo: TokenInfo) {
     if (!existingPlaceholder) {
       pools.push(placeholderPool);
       writePoolsData(pools);
+      console.log(`Created placeholder pool for token ${tokenInfo.symbol}`);
+    } else {
+      console.log(`Using existing placeholder pool for token ${tokenInfo.symbol}`);
     }
     
     return existingPlaceholder || placeholderPool;

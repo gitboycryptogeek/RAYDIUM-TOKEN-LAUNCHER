@@ -1,147 +1,129 @@
-/* General styles */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  line-height: 1.6;
-  color: #333;
-  background-color: #f5f7fa;
-}
-
 .container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
   display: grid;
   grid-template-columns: 250px 1fr;
   grid-template-rows: auto auto 1fr;
-  grid-template-areas:
+  grid-template-areas: 
     "header header"
     "sidebar tabs"
     "sidebar content";
   gap: 20px;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
   min-height: 100vh;
 }
 
-/* Header */
 .header {
   grid-area: header;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 20px;
-  background-color: #0a1929;
-  color: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 24px;
+  color: #3f51b5;
+  font-size: 28px;
 }
 
 .wallet-info {
+  text-align: right;
+  font-size: 14px;
   display: flex;
   flex-direction: column;
-  background-color: rgba(255, 255, 255, 0.1);
-  padding: 10px 15px;
-  border-radius: 6px;
+  align-items: flex-end;
 }
 
 .wallet-info p {
-  margin: 0;
-  font-size: 14px;
+  margin: 5px 0;
+  display: flex;
+  align-items: center;
 }
 
-/* Sidebar */
 .sidebar {
   grid-area: sidebar;
-  background-color: white;
-  padding: 20px;
+  background-color: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  height: fit-content;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  overflow-y: auto;
+  max-height: calc(100vh - 130px);
 }
 
 .sidebar h3 {
-  margin-bottom: 15px;
-  font-size: 18px;
-  color: #0a1929;
+  margin-top: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e0e0e0;
+  color: #333;
 }
 
 .token-list {
-  max-height: 400px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 15px;
 }
 
 .token-item {
-  padding: 10px;
-  border-bottom: 1px solid #eee;
-  background-color: #f9f9f9;
-  margin-bottom: 8px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
+  padding: 12px;
+  border-radius: 6px;
+  background-color: #f5f5f5;
   cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
 }
 
 .token-item:hover {
-  background-color: #f0f4f9;
-  transform: translateY(-2px);
+  background-color: #e0e0e0;
 }
 
 .token-item.selected {
   background-color: #e3f2fd;
-  border-left: 3px solid #007bff;
+  border-left: 3px solid #2196f3;
 }
 
 .token-item p {
-  margin: 0;
+  margin: 5px 0;
   font-size: 14px;
 }
 
 .pool-badge {
-  display: inline-block;
-  background-color: #28a745;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: #4caf50;
   color: white;
-  padding: 2px 6px;
-  border-radius: 10px;
   font-size: 10px;
-  margin-top: 5px;
+  padding: 3px 6px;
+  border-radius: 10px;
 }
 
-/* Tabs */
 .tabs {
   grid-area: tabs;
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 10px;
+  gap: 10px;
 }
 
 .tabs button {
-  background-color: #e9ecef;
-  color: #495057;
+  padding: 10px 20px;
   border: none;
-  border-radius: 6px;
-  padding: 10px 15px;
+  border-radius: 6px 6px 0 0;
+  background-color: #f5f5f5;
+  font-size: 16px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s;
 }
 
 .tabs button:hover:not(:disabled) {
-  background-color: #dee2e6;
+  background-color: #e0e0e0;
 }
 
 .tabs button.active {
-  background-color: #007bff;
-  color: white;
+  background-color: #ffffff;
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
 }
 
 .tabs button:disabled {
@@ -149,25 +131,75 @@ body {
   cursor: not-allowed;
 }
 
-/* Content */
 .content {
   grid-area: content;
-  background-color: white;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.empty-state {
+  background-color: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Forms */
-.form-container {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.form-container h2 {
-  margin-bottom: 20px;
-  color: #0a1929;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 40px;
   text-align: center;
+}
+
+.empty-state h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.empty-state p {
+  color: #666;
+}
+
+.help-text {
+  font-size: 13px;
+  color: #888;
+  margin-top: 5px;
+}
+
+.pool-management {
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+}
+
+.pool-info {
+  margin-bottom: 20px;
+}
+
+.pool-info h2 {
+  margin-top: 0;
+  color: #333;
+}
+
+.accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.accordion-item {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.accordion-header {
+  padding: 15px;
+  background-color: #f5f5f5;
+  margin: 0;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.accordion-content {
+  padding: 20px;
+  background-color: #ffffff;
 }
 
 .form-group {
@@ -176,200 +208,231 @@ body {
 
 .form-group label {
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   font-weight: 500;
-  color: #495057;
+  color: #555;
 }
 
 .form-group input,
-.form-group select,
-.form-group textarea {
+.form-group select {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #ced4da;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
-  transition: border-color 0.15s ease-in-out;
-}
-
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-  border-color: #007bff;
-  outline: 0;
-  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-}
-
-.form-group small {
-  display: block;
-  margin-top: 5px;
-  color: #6c757d;
-  font-size: 12px;
 }
 
 .static-input {
-  padding: 12px;
-  background-color: #f8f9fa;
-  border: 1px solid #ced4da;
+  padding: 10px 12px;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
-}
-
-/* Pool Management */
-.pool-management {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.pool-info {
-  background-color: #f8f9fa;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-}
-
-.pool-info h2 {
-  margin-bottom: 15px;
-  color: #0a1929;
-}
-
-.pool-info p {
-  margin-bottom: 10px;
-}
-
-/* Accordion */
-.accordion {
-  margin-top: 20px;
-}
-
-.accordion-item {
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
-  margin-bottom: 10px;
-  overflow: hidden;
-}
-
-.accordion-header {
-  padding: 15px;
-  background-color: #f8f9fa;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0;
-}
-
-.accordion-content {
-  padding: 15px;
-  border-top: 1px solid #dee2e6;
-}
-
-/* Empty state */
-.empty-state {
-  text-align: center;
-  padding: 30px;
-}
-
-.empty-state h3 {
-  margin-bottom: 10px;
-  color: #6c757d;
-}
-
-.empty-state p {
-  color: #adb5bd;
-}
-
-/* Buttons */
-.submit-btn {
   width: 100%;
-  padding: 12px;
-  background-color: #007bff;
+}
+
+.submit-btn {
+  background-color: #3f51b5;
   color: white;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  padding: 10px 20px;
   font-size: 16px;
-  font-weight: 500;
-  transition: background-color 0.15s ease-in-out;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 10px;
 }
 
 .submit-btn:hover:not(:disabled) {
-  background-color: #0069d9;
+  background-color: #303f9f;
 }
 
 .submit-btn:disabled {
-  background-color: #b3d7ff;
+  background-color: #bdbdbd;
   cursor: not-allowed;
 }
 
-/* Status messages */
-.error-container,
-.success-container {
-  margin: 20px 0;
+.error-container {
+  background-color: #ffebee;
+  color: #d32f2f;
   padding: 15px;
   border-radius: 4px;
-}
-
-.error-container {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  margin-bottom: 15px;
 }
 
 .success-container {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
 }
 
-/* Results */
 .result-container {
-  margin-top: 30px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   padding: 20px;
-  border: 1px solid #dee2e6;
-  border-radius: 4px;
-  background-color: #f8f9fa;
+  margin-top: 20px;
 }
 
 .result-container h3 {
-  margin-bottom: 15px;
-  color: #0a1929;
+  margin-top: 0;
+  color: #333;
 }
 
 .result-container pre {
-  background-color: #272822;
-  color: #f8f8f2;
+  background-color: #f5f5f5;
   padding: 15px;
   border-radius: 4px;
   overflow-x: auto;
   font-size: 14px;
-  line-height: 1.4;
 }
 
 .explorer-link {
   display: inline-block;
-  margin-top: 15px;
-  padding: 8px 15px;
-  background-color: #6c757d;
-  color: white;
+  margin-top: 10px;
+  color: #3f51b5;
   text-decoration: none;
-  border-radius: 4px;
   font-size: 14px;
-  transition: background-color 0.15s ease-in-out;
 }
 
 .explorer-link:hover {
-  background-color: #5a6268;
+  text-decoration: underline;
 }
 
-/* Responsive */
+.airdrop-button {
+  background-color: #4c4cff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-left: 10px;
+  transition: background-color 0.2s;
+}
+
+.airdrop-button:hover:not(:disabled) {
+  background-color: #3a3aff;
+}
+
+.airdrop-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* New styles for refresh functionality */
+.refresh-button {
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: background-color 0.2s;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background-color: #1976d2;
+}
+
+.refresh-button:disabled {
+  background-color: #bbdefb;
+  cursor: not-allowed;
+}
+
+.loading-container {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-style: italic;
+}
+
+.token-detail, .pool-detail {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.detail-item {
+  margin-bottom: 12px;
+  display: flex;
+}
+
+.detail-item .label {
+  font-weight: 500;
+  width: 120px;
+  color: #555;
+}
+
+.detail-item .value {
+  flex: 1;
+}
+
+.back-button {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  color: #555;
+  border-radius: 4px;
+  padding: 8px 16px;
+  margin-top: 15px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.back-button:hover {
+  background-color: #e0e0e0;
+}
+
+.associated-pool {
+  background-color: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.associated-pool button {
+  background-color: #3f51b5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.warning-message {
+  background-color: #fff3e0;
+  color: #e65100;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+/* Make it responsive */
 @media (max-width: 768px) {
   .container {
     grid-template-columns: 1fr;
-    grid-template-areas:
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: 
       "header"
-      "tabs"
       "sidebar"
+      "tabs"
       "content";
+    gap: 15px;
+    padding: 15px;
+  }
+  
+  .sidebar {
+    max-height: 300px;
   }
   
   .header {
@@ -377,141 +440,23 @@ body {
     align-items: flex-start;
   }
   
-  .header h1 {
-    margin-bottom: 10px;
-  }
-  
   .wallet-info {
+    text-align: left;
+    margin-top: 10px;
+    align-items: flex-start;
+  }
+
+  .pool-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pool-actions button {
     width: 100%;
   }
-  
-  .tabs {
-    overflow-x: auto;
-    white-space: nowrap;
-    margin-bottom: 20px;
+
+  .airdrop-button {
+    margin-left: 0;
+    margin-top: 5px;
   }
-  
-  .tabs button {
-    flex: 1 0 auto;
-  }
-}
-/* Add these styles to your Home.css file */
-
-.pending-pool-container {
-  background-color: #f8f9ff;
-  border: 1px solid #e6e8ff;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-
-.pool-creation-header {
-  margin-bottom: 16px;
-}
-
-.pool-creation-header h3 {
-  margin-top: 0;
-  color: #333;
-  font-size: 18px;
-}
-
-.pool-creation-header p {
-  color: #666;
-  margin-bottom: 16px;
-}
-
-.advanced-settings {
-  margin-top: 16px;
-  margin-bottom: 16px;
-}
-
-.advanced-settings summary {
-  cursor: pointer;
-  color: #6366f1;
-  font-weight: 500;
-  padding: 8px 0;
-}
-
-.advanced-settings summary:hover {
-  color: #4f46e5;
-}
-
-.advanced-settings .form-group {
-  margin-top: 12px;
-}
-
-.price-preview {
-  background-color: #f0f4ff;
-  border: 1px solid #dbeafe;
-  border-radius: 6px;
-  padding: 16px;
-  margin-top: 16px;
-  margin-bottom: 16px;
-}
-
-.price-preview h4 {
-  margin-top: 0;
-  margin-bottom: 12px;
-  color: #1e40af;
-  font-size: 16px;
-}
-
-.price-preview p {
-  margin-bottom: 8px;
-}
-
-.price-preview strong {
-  color: #1e40af;
-}
-
-.price-preview small {
-  color: #6b7280;
-  font-size: 12px;
-}
-
-/* Improve existing pool badge style */
-.pool-badge {
-  background-color: #4f46e5;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  display: inline-block;
-  margin-top: 4px;
-}
-
-/* Style for token items without pools */
-.token-item:not(:has(.pool-badge)) {
-  position: relative;
-}
-
-.token-item:not(:has(.pool-badge))::after {
-  content: "No Pool";
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background-color: #9ca3af;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-/* Make error and success messages more visible */
-.error-container, .success-container {
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  border-radius: 6px;
-}
-
-.error-container {
-  background-color: #fee2e2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
-}
-
-.success-container {
-  background-color: #dcfce7;
-  color: #15803d;
-  border: 1px solid #bbf7d0;
 }

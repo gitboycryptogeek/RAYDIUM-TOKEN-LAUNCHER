@@ -1,172 +1,313 @@
-/* TokenCreationForm.css */
 .token-form-container {
-    background-color: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    padding: 24px;
-    max-width: 600px;
-    margin: 0 auto;
-  }
-  
-  .token-form-container h2 {
-    margin-top: 0;
-    margin-bottom: 24px;
-    color: #333;
-    text-align: center;
-  }
-  
-  .form-section {
-    margin-bottom: 24px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 16px;
-  }
-  
-  .form-section h3 {
-    margin-top: 0;
-    margin-bottom: 16px;
-    color: #444;
-    font-size: 18px;
-  }
-  
-  .form-group {
-    margin-bottom: 16px;
-  }
-  
-  .form-group label {
-    display: block;
-    margin-bottom: 6px;
-    font-weight: 500;
-    color: #555;
-  }
-  
-  .form-group input[type="text"],
-  .form-group input[type="number"],
-  .form-group textarea {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    transition: border-color 0.3s;
-  }
-  
-  .form-group input[type="text"]:focus,
-  .form-group input[type="number"]:focus,
-  .form-group textarea:focus {
-    border-color: #9945FF;
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(153, 69, 255, 0.1);
-  }
-  
-  .form-group small {
-    display: block;
-    margin-top: 4px;
-    font-size: 12px;
-    color: #777;
-  }
-  
-  .range-container {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  
-  .range-slider {
-    flex-grow: 1;
-    height: 6px;
-    background: #ddd;
-    outline: none;
-    border-radius: 3px;
-    -webkit-appearance: none;
-  }
-  
-  .range-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #9945FF;
-    cursor: pointer;
-  }
-  
-  .range-slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #9945FF;
-    cursor: pointer;
-    border: none;
-  }
-  
-  .range-value {
-    min-width: 40px;
-    text-align: center;
-    font-weight: 600;
-    color: #9945FF;
-  }
-  
-  .price-preview {
-    background-color: #f8f9ff;
-    border: 1px solid #e6e8ff;
-    border-radius: 6px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+  margin-bottom: 20px;
+  max-width: 700px;
+  width: 100%;
+}
+
+.token-form-container h2 {
+  color: #333;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.token-form-container h3 {
+  color: #444;
+  margin-bottom: 16px;
+}
+
+.step-indicator {
+  display: flex;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 12px;
+}
+
+.step {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+  font-weight: 500;
+  color: #999;
+  position: relative;
+}
+
+.step.active {
+  color: #3f51b5;
+  font-weight: 600;
+}
+
+.step.active:after {
+  content: '';
+  position: absolute;
+  bottom: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 3px;
+  background-color: #3f51b5;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #555;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+}
+
+.form-group input[type="file"] {
+  padding: 8px 0;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: #3f51b5;
+  outline: none;
+}
+
+.help-text {
+  display: block;
+  font-size: 13px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-group input[type="checkbox"] {
+  margin-right: 10px;
+}
+
+.checkbox-group label {
+  margin-bottom: 0;
+  font-weight: normal;
+}
+
+.error-message {
+  background-color: #ffebee;
+  color: #d32f2f;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.success-message {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.back-btn,
+.next-btn,
+.submit-btn {
+  padding: 10px 24px;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.back-btn {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  color: #555;
+}
+
+.back-btn:hover:not(:disabled) {
+  background-color: #e0e0e0;
+}
+
+.next-btn,
+.submit-btn {
+  background-color: #3f51b5;
+  border: none;
+  color: white;
+}
+
+.next-btn:hover:not(:disabled),
+.submit-btn:hover:not(:disabled) {
+  background-color: #303f9f;
+}
+
+.back-btn:disabled,
+.next-btn:disabled,
+.submit-btn:disabled {
+  background-color: #bdbdbd;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.price-preview {
+  background-color: #f5f5f5;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.price-preview h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.info-box {
+  background-color: #e8f5e9;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.info-text {
+  font-size: 14px;
+  color: #666;
+}
+
+.connect-wallet-prompt {
+  text-align: center;
+  padding: 30px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.connect-wallet-prompt p {
+  color: #666;
+  font-size: 16px;
+}
+
+/* New styles for token response and airdrop button */
+.token-response {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 30px;
+  border: 1px solid #e0e0e0;
+}
+
+.token-response h3 {
+  color: #3f51b5;
+  margin-top: 0;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.token-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-row {
+  display: flex;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
+}
+
+.info-row .label {
+  font-weight: 500;
+  width: 140px;
+  color: #555;
+}
+
+.info-row .value {
+  flex: 1;
+  word-break: break-word;
+}
+
+.warning-message {
+  background-color: #fff3e0;
+  color: #e65100;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 15px 0;
+  font-size: 14px;
+}
+
+.airdrop-container {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.airdrop-btn {
+  background-color: #4c4cff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.airdrop-btn:hover:not(:disabled) {
+  background-color: #3a3aff;
+}
+
+.airdrop-btn:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .token-form-container {
     padding: 16px;
-    margin-top: 16px;
   }
   
-  .price-preview h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    color: #444;
-    font-size: 16px;
+  .form-actions {
+    flex-direction: column;
+    gap: 10px;
   }
   
-  .price-preview p {
-    margin-bottom: 8px;
-    font-size: 14px;
-  }
-  
-  .price-preview small {
-    font-size: 12px;
-    color: #777;
-  }
-  
+  .back-btn,
+  .next-btn,
   .submit-btn {
     width: 100%;
-    padding: 12px;
-    background-color: #9945FF;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.3s;
+    text-align: center;
   }
   
-  .submit-btn:hover {
-    background-color: #8a35f0;
+  .info-row {
+    flex-direction: column;
   }
   
-  .submit-btn:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
+  .info-row .label {
+    width: 100%;
+    margin-bottom: 4px;
   }
-  
-  .error-message {
-    background-color: #fee2e2;
-    color: #b91c1c;
-    padding: 12px;
-    border-radius: 4px;
-    margin-bottom: 16px;
-    font-size: 14px;
-  }
-  
-  .success-message {
-    background-color: #dcfce7;
-    color: #15803d;
-    padding: 12px;
-    border-radius: 4px;
-    margin-bottom: 16px;
-    font-size: 14px;
-  }
+}

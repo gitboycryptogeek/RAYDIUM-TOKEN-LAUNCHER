@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './Home.css';
 import TokenCreationForm from './tokenCreationForm';
 import PendingPoolManagement from './pendingPoolManagement';
+import { useWallet } from '../contexts/walletContext';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
@@ -14,7 +15,7 @@ const getExplorerUrl = (type, address, cluster) => {
 };
 
 const Home = () => {
-  const [walletInfo, setWalletInfo] = useState({ publicKey: '', cluster: '', balance: 0 });
+  const { publicKey, connected, balance, cluster } = useWallet();
   const [activeTab, setActiveTab] = useState('create');
   const [userTokens, setUserTokens] = useState([]);
   const [userPools, setUserPools] = useState([]);
@@ -24,6 +25,7 @@ const Home = () => {
   const [success, setSuccess] = useState('');
   const [selectedToken, setSelectedToken] = useState(null);
   const [selectedPool, setSelectedPool] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const [liquidityForm, setLiquidityForm] = useState({
     amount: '1',
@@ -41,63 +43,238 @@ const Home = () => {
     fromToken: 'sol', // 'sol' or 'token'
     slippage: '1'
   });
-  
-  // Fetch data on mount
-  useEffect(() => {
-    fetchWalletInfo();
-    fetchUserTokens();
-    fetchUserPools();
-
-    // Set up a refresh interval
-    const intervalId = setInterval(() => {
-      fetchWalletInfo();
-      fetchUserTokens();
-      fetchUserPools();
-    }, 30000); // Refresh every 30 seconds
-
-    // Clear the interval when component unmounts
-    return () => clearInterval(intervalId);
-  }, []);
-  
-  // Fetch wallet info
-  const fetchWalletInfo = async () => {
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  // Fetch user tokens with retry logic
+  const fetchUserTokens = useCallback(async (showLoading = true) => {
+    if (!connected || !publicKey) return;
+    
+    if (showLoading) setIsRefreshing(true);
+    
     try {
-      const response = await axios.get(`${API_URL}/wallet`);
-      setWalletInfo(response.data);
-    } catch (error) {
-      console.error('Error fetching wallet info:', error);
-      setError('Failed to fetch wallet information. Make sure your backend server is running.');
-    }
-  };
-  
-  // Fetch user tokens
-  const fetchUserTokens = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/token/list`);
-      if (response.data && Array.isArray(response.data)) {
-        setUserTokens(response.data);
+      // Try up to 3 times with exponential backoff
+      let retries = 3;
+      let success = false;
+      let tokensData = [];
+      
+      // Add random jitter to prevent synchronized requests
+      const initialDelay = 1000 + Math.floor(Math.random() * 500);
+      
+      while (retries > 0 && !success) {
+        try {
+          const response = await axios.get(`${API_URL}/token/list`, {
+            params: { publicKey },
+            // Add a longer timeout 
+            timeout: 30000
+          });
+          
+          if (response.data && Array.isArray(response.data)) {
+            tokensData = response.data;
+            success = true;
+          } else {
+            throw new Error('Invalid response format');
+          }
+        } catch (e) {
+          console.warn(`Token fetch attempt failed, ${retries-1} retries left`, e);
+          retries--;
+          
+          if (retries > 0) {
+            // Use exponential backoff with delay
+            await delay(initialDelay * Math.pow(3, 3-retries));
+          }
+        }
+      }
+      
+      console.log('Fetched tokens:', tokensData);
+      setUserTokens(tokensData);
+      
+      // If not successful after all retries, look for local data
+      if (!success) {
+        // Try to get tokens from localStorage as a fallback
+        try {
+          const localTokens = localStorage.getItem('localTokens');
+          if (localTokens) {
+            const parsedTokens = JSON.parse(localTokens);
+            if (Array.isArray(parsedTokens) && parsedTokens.length > 0) {
+              console.log('Using locally stored tokens as fallback:', parsedTokens);
+              setUserTokens(parsedTokens);
+            }
+          }
+        } catch (e) {
+          console.error('Error getting tokens from local storage:', e);
+        }
+      } else {
+        // If successful, store tokens in localStorage for future fallback
+        try {
+          localStorage.setItem('localTokens', JSON.stringify(tokensData));
+        } catch (e) {
+          console.error('Error storing tokens in local storage:', e);
+        }
+      }
+      
+      // Update selected token if it exists
+      if (selectedToken) {
+        const updatedToken = tokensData.find(t => t.mint === selectedToken.mint);
+        if (updatedToken) {
+          setSelectedToken(updatedToken);
+        }
       }
     } catch (error) {
       console.error('Error fetching user tokens:', error);
+    } finally {
+      if (showLoading) setIsRefreshing(false);
     }
-  };
+  }, [connected, publicKey, selectedToken]);
   
-  // Fetch user pools
-  const fetchUserPools = async () => {
+  // Fetch user pools with retry logic
+  const fetchUserPools = useCallback(async (showLoading = true) => {
+    if (!connected || !publicKey) return;
+    
+    if (showLoading) setIsRefreshing(true);
+    
     try {
-      const response = await axios.get(`${API_URL}/pool/list`);
-      // Handle the case when the endpoint returns empty data or errors
-      if (response.data && Array.isArray(response.data)) {
-        setUserPools(response.data);
-      } else {
-        console.log('No pools data available', response.data);
-        setUserPools([]);
+      // Try up to 3 times with exponential backoff
+      let retries = 3;
+      let success = false;
+      let poolsData = [];
+      
+      // Add random jitter to prevent synchronized requests
+      const initialDelay = 1500 + Math.floor(Math.random() * 500);
+      
+      while (retries > 0 && !success) {
+        try {
+          const response = await axios.get(`${API_URL}/pool/list`, {
+            params: { publicKey },
+            // Add a longer timeout
+            timeout: 30000
+          });
+          
+          if (response.data && Array.isArray(response.data)) {
+            poolsData = response.data;
+            success = true;
+          } else {
+            throw new Error('Invalid response format');
+          }
+        } catch (e) {
+          console.warn(`Pools fetch attempt failed, ${retries-1} retries left`, e);
+          retries--;
+          
+          if (retries > 0) {
+            // Use exponential backoff with delay
+            await delay(initialDelay * Math.pow(3, 3-retries));
+          }
+        }
+      }
+      
+      console.log('Fetched pools:', poolsData);
+      
+      // Get local pools to merge with API response (even if API failed)
+      const localPools = localStorage.getItem('localPools');
+      let parsedLocalPools = [];
+      
+      if (localPools) {
+        try {
+          parsedLocalPools = JSON.parse(localPools);
+          
+          if (success) {
+            // Filter out local pools that now exist in the API response
+            parsedLocalPools = parsedLocalPools.filter(lp => 
+              !poolsData.some(p => p.baseMint === lp.baseMint && p.quoteMint === lp.quoteMint)
+            );
+            
+            // Update localStorage with filtered pools
+            localStorage.setItem('localPools', JSON.stringify(parsedLocalPools));
+          }
+        } catch (e) {
+          console.error('Error parsing local pools:', e);
+        }
+      }
+      
+      // Merge API pools with local pools
+      const mergedPools = [...poolsData, ...parsedLocalPools];
+      
+      setUserPools(mergedPools);
+      
+      // If the selected pool is in the list, update it with fresh data
+      if (selectedPool) {
+        const updatedPool = mergedPools.find(p => p.poolId === selectedPool.poolId);
+        if (updatedPool) {
+          setSelectedPool(updatedPool);
+        }
       }
     } catch (error) {
       console.error('Error fetching user pools:', error);
-      setUserPools([]);
+      
+      // If all API attempts failed, just use local pools
+      try {
+        const localPools = localStorage.getItem('localPools');
+        if (localPools) {
+          const parsedPools = JSON.parse(localPools);
+          if (Array.isArray(parsedPools)) {
+            console.log('Using locally stored pools as fallback:', parsedPools);
+            setUserPools(parsedPools);
+          }
+        }
+      } catch (e) {
+        console.error('Error getting pools from local storage:', e);
+      }
+    } finally {
+      if (showLoading) setIsRefreshing(false);
     }
-  };
+  }, [connected, publicKey, selectedPool]);
+  
+  // Combined refresh function
+  const refreshData = useCallback(async () => {
+    setIsRefreshing(true);
+    setError('');
+    
+    try {
+      await Promise.all([
+        fetchUserTokens(false),
+        fetchUserPools(false)
+      ]);
+      
+      setSuccess('Data refreshed successfully');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setError('Failed to refresh data. Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchUserTokens, fetchUserPools]);
+  
+  // Fetch data when wallet is connected
+  useEffect(() => {
+    if (connected && publicKey) {
+      // Initial load with staggered requests
+      const loadInitialData = async () => {
+        // Load tokens first
+        await fetchUserTokens();
+        // Small delay before loading pools 
+        await delay(500);
+        await fetchUserPools();
+      };
+      
+      loadInitialData();
+  
+      // Set up a refresh interval with lower frequency
+      const intervalId = setInterval(async () => {
+        await fetchUserTokens(false);
+        // Small delay between requests to avoid rate limiting
+        await delay(1000);
+        await fetchUserPools(false);
+      }, 30000); // Increased to 30 seconds to avoid rate limiting
+  
+      // Clear the interval when component unmounts
+      return () => clearInterval(intervalId);
+    } else {
+      // Reset state when wallet is disconnected
+      setUserTokens([]);
+      setUserPools([]);
+      setSelectedToken(null);
+      setSelectedPool(null);
+    }
+  }, [connected, publicKey, fetchUserTokens, fetchUserPools]);
   
   // Handle form changes
   const handleChange = (formType, field, value) => {
@@ -166,7 +343,8 @@ const Home = () => {
       baseSymbol: token.symbol || token.mint.substring(0, 4),
       quoteSymbol: 'SOL',
       lpBalance: { balance: 0 },
-      isPending: true // Flag to indicate this is not a real pool yet
+      isPending: true, // Flag to indicate this is not a real pool yet
+      isPlaceholder: true
     };
     
     setSelectedPool(placeholderPool);
@@ -181,22 +359,80 @@ const Home = () => {
     
     setActiveTab('manage');
   };
+
+  // Airdrop handling
+  const [airdropLoading, setAirdropLoading] = useState(false);
+
+  const requestAirdrop = async () => {
+    if (!connected || !publicKey) {
+      setError('Please connect your wallet first');
+      return;
+    }
+    
+    setAirdropLoading(true);
+    setError('');
+    
+    try {
+      const response = await axios.post(`${API_URL}/wallet/airdrop`, {
+        publicKey,
+        amount: 1 // Request 1 SOL
+      });
+      
+      if (response.data.error) {
+        throw new Error(response.data.error);
+      }
+      
+      // Show success message
+      setSuccess(`Successfully airdropped 1 SOL to your wallet. It may take a few seconds to appear.`);
+      
+      // Wait 5 seconds before updating balance display
+      setTimeout(() => {
+        // You would typically refresh wallet info here
+        // If you have a refreshWalletInfo function, call it here
+        refreshData();
+      }, 5000);
+      
+    } catch (error) {
+      console.error('Error requesting airdrop:', error);
+      setError(error.response?.data?.error || error.message || 'Failed to request airdrop');
+    } finally {
+      setAirdropLoading(false);
+    }
+  };
   
   // Handle token creation success
-  const handleTokenCreationSuccess = (tokenData) => {
+  const handleTokenCreationSuccess = useCallback((tokenData) => {
     setResult(tokenData);
     setSuccess(`Token ${tokenData.name} (${tokenData.symbol}) created successfully!`);
     
-    // Refresh data
-    fetchWalletInfo();
-    fetchUserTokens();
-    fetchUserPools();
-  };
+    // If token has a pool, select it
+    if (tokenData.pool) {
+      const newToken = {
+        mint: tokenData.mint,
+        symbol: tokenData.symbol,
+        name: tokenData.name,
+        balance: tokenData.initialSupply || 0,
+        decimals: tokenData.decimals
+      };
+      
+      setSelectedToken(newToken);
+      setSelectedPool(tokenData.pool);
+    }
+    
+    // Refresh data with a short delay to allow blockchain to update
+    setTimeout(() => {
+      fetchUserTokens();
+      fetchUserPools();
+    }, 2000);
+  }, [fetchUserTokens, fetchUserPools]);
   
   // Handle pool creation success
-  const handlePoolCreated = (poolData) => {
+  const handlePoolCreated = useCallback((poolData) => {
     // Update the selected pool
     setSelectedPool(poolData);
+    
+    // Show success message
+    setSuccess(`Pool created successfully!`);
     
     // Refresh data
     fetchUserPools();
@@ -215,10 +451,15 @@ const Home = () => {
     } catch (e) {
       console.error('Error updating local pools:', e);
     }
-  };
+  }, [fetchUserPools]);
   
   // Handle form submission for liquidity and swap operations
   const handleSubmit = async (formType) => {
+    if (!connected || !publicKey) {
+      setError('Please connect your wallet first');
+      return;
+    }
+    
     setLoading(true);
     setError('');
     setSuccess('');
@@ -233,7 +474,7 @@ const Home = () => {
             throw new Error('No pool selected');
           }
           
-          if (selectedPool.isPending) {
+          if (selectedPool.isPending || selectedPool.isPlaceholder) {
             throw new Error('This pool is pending creation. Create a pool first.');
           }
           
@@ -246,7 +487,8 @@ const Home = () => {
             fixedSide: liquidityForm.fixedSide === 'sol' 
               ? (isSolTokenB ? 'b' : 'a') 
               : (isSolTokenB ? 'a' : 'b'),
-            slippage: parseFloat(liquidityForm.slippage)
+            slippage: parseFloat(liquidityForm.slippage),
+            userWallet: publicKey
           };
           
           response = await axios.post(`${API_URL}/liquidity/add`, payload);
@@ -258,14 +500,15 @@ const Home = () => {
             throw new Error('No pool selected');
           }
           
-          if (selectedPool.isPending) {
+          if (selectedPool.isPending || selectedPool.isPlaceholder) {
             throw new Error('This pool is pending creation. Create a pool first.');
           }
           
           const payload = {
             poolId: selectedPool.poolId,
             lpAmount: parseFloat(withdrawForm.lpAmount),
-            slippage: parseFloat(withdrawForm.slippage)
+            slippage: parseFloat(withdrawForm.slippage),
+            userWallet: publicKey
           };
           
           response = await axios.post(`${API_URL}/liquidity/remove`, payload);
@@ -277,7 +520,7 @@ const Home = () => {
             throw new Error('No pool or token selected');
           }
           
-          if (selectedPool.isPending) {
+          if (selectedPool.isPending || selectedPool.isPlaceholder) {
             throw new Error('This pool is pending creation. Create a pool first.');
           }
           
@@ -288,7 +531,8 @@ const Home = () => {
             inputMint: swapForm.fromToken === 'sol' ? solMint : selectedToken.mint,
             amount: parseFloat(swapForm.amount),
             fixedSide: 'in',
-            slippage: parseFloat(swapForm.slippage)
+            slippage: parseFloat(swapForm.slippage),
+            userWallet: publicKey
           };
           
           response = await axios.post(`${API_URL}/swap`, payload);
@@ -301,10 +545,11 @@ const Home = () => {
       
       setResult(response.data);
       
-      // Refresh wallet info, tokens and pools
-      fetchWalletInfo();
-      fetchUserTokens();
-      fetchUserPools();
+      // Refresh tokens and pools
+      setTimeout(() => {
+        fetchUserTokens();
+        fetchUserPools();
+      }, 2000);
     } catch (error) {
       console.error(`Error submitting ${formType} form:`, error);
       setError(error.response?.data?.error || error.message || 'An error occurred');
@@ -318,16 +563,40 @@ const Home = () => {
       <header className='header'>
         <h1>Solana Token Launcher</h1>
         <div className='wallet-info'>
-          <p><strong>Wallet:</strong> {walletInfo.publicKey || 'Loading...'}</p>
-          <p><strong>Network:</strong> {walletInfo.cluster || 'Loading...'}</p>
-          <p><strong>Balance:</strong> {walletInfo.balance !== undefined ? walletInfo.balance.toFixed(4) : 'Loading...'} SOL</p>
+          <p><strong>Wallet:</strong> {connected ? (publicKey ? `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}` : 'Loading...') : 'Not Connected'}</p>
+          <p><strong>Network:</strong> {cluster || 'Loading...'}</p>
+          <p>
+            <strong>Balance:</strong> {connected ? (balance !== undefined ? balance.toFixed(4) : 'Loading...') : '0.0000'} SOL
+            {connected && cluster === 'devnet' && (
+              <button 
+                className='airdrop-button' 
+                onClick={requestAirdrop}
+                disabled={airdropLoading}
+              >
+                {airdropLoading ? 'Requesting...' : 'Get 1 SOL'}
+              </button>
+            )}
+          </p>
+          {connected && (
+            <button 
+              className='refresh-button' 
+              onClick={refreshData}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+            </button>
+          )}
         </div>
       </header>
       
       {/* Tokens sidebar */}
       <div className='sidebar'>
-        <h3>Your Tokens with Pools</h3>
-        {userTokens.length > 0 ? (
+        <h3>Your Tokens</h3>
+        {!connected ? (
+          <p>Connect your wallet to see your tokens</p>
+        ) : isRefreshing ? (
+          <p>Loading tokens...</p>
+        ) : userTokens.length > 0 ? (
           <div className='token-list'>
             {userTokens.map((token) => (
               <div 
@@ -336,7 +605,7 @@ const Home = () => {
                 onClick={() => handleTokenSelect(token)}
               >
                 <p><strong>{token.symbol || `${token.mint.slice(0, 4)}...${token.mint.slice(-4)}`}</strong></p>
-                <p>Balance: {token.balance}</p>
+                <p>Balance: {typeof token.balance === 'number' ? token.balance.toFixed(6) : token.balance}</p>
                 {userPools.some(p => p && (p.baseMint === token.mint || p.quoteMint === token.mint)) && (
                   <p className="pool-badge">Has Pool</p>
                 )}
@@ -344,7 +613,10 @@ const Home = () => {
             ))}
           </div>
         ) : (
-          <p>No tokens found</p>
+          <div>
+            <p>No tokens found</p>
+            <p className="help-text">Create a token to get started!</p>
+          </div>
         )}
       </div>
       
@@ -367,19 +639,20 @@ const Home = () => {
       <div className='content'>
         {/* Token Creation Form */}
         {activeTab === 'create' && (
-          <TokenCreationForm onSuccess={handleTokenCreationSuccess} />
+          <TokenCreationForm onSuccess={handleTokenCreationSuccess} refreshData={refreshData} />
         )}
         
         {/* Pending Pool Management */}
-        {activeTab === 'manage' && selectedToken && selectedPool && selectedPool.isPending && (
+        {activeTab === 'manage' && selectedToken && selectedPool && (selectedPool.isPending || selectedPool.isPlaceholder) && (
           <PendingPoolManagement 
             token={selectedToken} 
             onPoolCreated={handlePoolCreated} 
+            refreshData={refreshData}
           />
         )}
         
         {/* Manage Pool Form (Add/Remove Liquidity, Swap) */}
-        {activeTab === 'manage' && selectedToken && selectedPool && !selectedPool.isPending && (
+        {activeTab === 'manage' && selectedToken && selectedPool && !selectedPool.isPending && !selectedPool.isPlaceholder && (
           <div className='pool-management'>
             <div className='pool-info'>
               <h2>Pool Management</h2>
@@ -431,7 +704,7 @@ const Home = () => {
                   </div>
                   <button 
                     onClick={() => handleSubmit('addLiquidity')} 
-                    disabled={loading}
+                    disabled={loading || !connected}
                     className='submit-btn'
                   >
                     {loading ? 'Adding...' : 'Add Liquidity'}
@@ -466,7 +739,7 @@ const Home = () => {
                   </div>
                   <button 
                     onClick={() => handleSubmit('removeLiquidity')} 
-                    disabled={loading}
+                    disabled={loading || !connected}
                     className='submit-btn'
                   >
                     {loading ? 'Removing...' : 'Remove Liquidity'}
@@ -517,7 +790,7 @@ const Home = () => {
                   </div>
                   <button 
                     onClick={() => handleSubmit('swap')} 
-                    disabled={loading}
+                    disabled={loading || !connected}
                     className='submit-btn'
                   >
                     {loading ? 'Swapping...' : 'Swap'}
@@ -545,7 +818,7 @@ const Home = () => {
             <pre>{JSON.stringify(result, null, 2)}</pre>
             {result.txId && (
               <a 
-                href={getExplorerUrl('tx', result.txId, walletInfo.cluster)} 
+                href={getExplorerUrl('tx', result.txId, cluster)} 
                 target='_blank' 
                 rel='noopener noreferrer'
                 className='explorer-link'
@@ -555,7 +828,7 @@ const Home = () => {
             )}
             {result.mint && (
               <a 
-                href={getExplorerUrl('address', result.mint, walletInfo.cluster)} 
+                href={getExplorerUrl('address', result.mint, cluster)} 
                 target='_blank' 
                 rel='noopener noreferrer'
                 className='explorer-link'
@@ -566,7 +839,7 @@ const Home = () => {
             )}
             {result.pool && result.pool.poolId && (
               <a 
-                href={getExplorerUrl('address', result.pool.poolId, walletInfo.cluster)} 
+                href={getExplorerUrl('address', result.pool.poolId, cluster)} 
                 target='_blank' 
                 rel='noopener noreferrer'
                 className='explorer-link'

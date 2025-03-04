@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  raydium-app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - SOLANA_CLUSTER=${SOLANA_CLUSTER:-devnet}
+      - RPC_ENDPOINT=${RPC_ENDPOINT:-}
+      - PORT=3001
+      - WALLET_PATH=/app/wallet.json
+    volumes:
+      - ./data:/app/data
+      - ./wallet.json:/app/wallet.json
+    restart: unless-stopped

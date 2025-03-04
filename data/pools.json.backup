@@ -358,5 +358,25 @@
     "owner": "7RPd83ZVHZW4G11KUcR1JoePaqfeHzuVeZTa7aY8jNAd",
     "initialPrice": 0,
     "isPlaceholder": true
+  },
+  {
+    "poolId": "32mFzDE49rdkv3WDaUA7whyAcdodfeSvUNQ4ZYBFywZg",
+    "txId": "5jbKhbj9aAsMKwUK6q8DUzY1MdMqaU4JSXizPV8VT7EUj3HLsKb1xCo5RL2zZxaVBF28GZp5VCijMABU7PExvfBT",
+    "type": "CPMM",
+    "baseMint": "2Dr6u4hcP6ABCnSZ2ZupkdmT1iAMrKS2hB59VFVVc6Yn",
+    "baseName": "2Dr6u4",
+    "baseSymbol": "2Dr6u4",
+    "baseDecimals": 9,
+    "baseAmount": 10,
+    "quoteMint": "So11111111111111111111111111111111111111112",
+    "quoteName": "Wrapped SOL",
+    "quoteSymbol": "WSOL",
+    "quoteDecimals": 9,
+    "quoteAmount": 0.2,
+    "lpMint": "DrT8oj2xoMDyz18ExwyLGnNPCgwcNDcMHBU6c2fwA6n9",
+    "programId": "CPMDWBwJDtYax9qW7AyRuVC19Cc4L4Vcy4n2BHAbHkCW",
+    "createdAt": "2025-03-01T19:15:42.134Z",
+    "owner": "7RPd83ZVHZW4G11KUcR1JoePaqfeHzuVeZTa7aY8jNAd",
+    "initialPrice": 0.02
   }
 ]

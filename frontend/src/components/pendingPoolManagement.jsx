@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useWallet } from '../contexts/walletContext';
+import { useWallet } from '../components/telegramWalletAdapter';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 

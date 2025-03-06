@@ -47,6 +47,7 @@ function getErrorMessage(error: unknown): string {
 
 // Create Express app
 const app = express();
+app.set('trust proxy', 1); // Trust first proxys
 const PORT = process.env.PORT || 3001;
 
 // Configure multer for file uploads (for token images)

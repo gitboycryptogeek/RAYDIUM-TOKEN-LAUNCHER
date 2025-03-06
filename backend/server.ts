@@ -24,6 +24,28 @@ import RateLimit from 'express-rate-limit';
 import { requestAirdrop } from './config';
 import { PublicKey, Keypair } from '@solana/web3.js';
 
+// Better retry logic with exponential backoff
+async function retryWithBackoff(fn: Function, maxRetries = 3, initialDelay = 1000) {
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      return await fn();
+    } catch (error) {
+      retries++;
+      
+      if (retries >= maxRetries) {
+        throw error;
+      }
+      
+      // Exponential backoff with jitter
+      const delay = initialDelay * Math.pow(2, retries) + Math.random() * 1000;
+      console.log(`Retry ${retries}/${maxRetries} failed. Retrying in ${delay.toFixed(0)}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 // Add type definition for Telegram User
 declare global {
   namespace Express {
@@ -230,13 +252,16 @@ app.post('/api/token/create', upload.single('image'), async (req: Request, res: 
     // Get image buffer if it exists
     const image = req.file ? req.file.buffer : undefined;
     
-    const result = await createToken({
-      name,
-      symbol,
-      description,
-      decimals: parseInt(decimals) || 9,
-      initialSupply: parseInt(initialSupply) || 1000000000,
-      image
+    // Use retry logic for token creation
+    const result = await retryWithBackoff(async () => {
+      return await createToken({
+        name,
+        symbol,
+        description,
+        decimals: parseInt(decimals) || 9,
+        initialSupply: parseInt(initialSupply) || 1000000000,
+        image
+      });
     });
     
     // Create a placeholder pool for the token
@@ -286,15 +311,17 @@ app.post('/api/token/create-with-pool', upload.single('image'), async (req: Requ
     const image = req.file ? req.file.buffer : undefined;
     
     try {
-      // Step 1: Create the token
+      // Step 1: Create the token with retry logic
       console.log(`Creating token: ${name} (${symbol})`);
-      const tokenResult = await createToken({
-        name,
-        symbol,
-        description,
-        decimals: parsedDecimals,
-        initialSupply: parsedSupply,
-        image
+      const tokenResult = await retryWithBackoff(async () => {
+        return await createToken({
+          name,
+          symbol,
+          description,
+          decimals: parsedDecimals,
+          initialSupply: parsedSupply,
+          image
+        });
       });
       
       console.log('Token created:', tokenResult);
@@ -305,7 +332,9 @@ app.post('/api/token/create-with-pool', upload.single('image'), async (req: Requ
         
         // Step 2: Create CPMM pool directly (no market needed)
         console.log(`Creating pool with ${parsedLiquidity} SOL for token ${tokenResult.mint}`);
-        const result = await createTokenWithPool(tokenResult, parsedLiquidity);
+        const result = await retryWithBackoff(async () => {
+          return await createTokenWithPool(tokenResult, parsedLiquidity);
+        });
         
         console.log('Pool creation result:', result);
         
@@ -614,7 +643,7 @@ app.post('/api/swap', async (req: Request, res: Response) => {
   }
 });
 
-
+// Airdrop SOL to a wallet
 app.post('/api/wallet/airdrop', async (req: Request, res: Response) => {
   try {
     const { publicKey, amount } = req.body;
@@ -627,14 +656,37 @@ app.post('/api/wallet/airdrop', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Airdrops only available on devnet' });
     }
     
-    const signature = await requestAirdrop(publicKey, parseFloat(amount) || 1);
-    
-    res.json({
-      success: true,
-      signature,
-      publicKey,
-      amount: parseFloat(amount) || 1
-    });
+    try {
+      const signature = await retryWithBackoff(async () => {
+        console.log(`Requesting airdrop of ${parseFloat(amount) || 1} SOL to ${publicKey}`);
+        return await requestAirdrop(publicKey, parseFloat(amount) || 1);
+      });
+      
+      res.json({
+        success: true,
+        signature,
+        publicKey,
+        amount: parseFloat(amount) || 1
+      });
+    } catch (airdropError) {
+      console.error('Error requesting airdrop:', airdropError);
+      
+      // Check for rate limiting errors
+      if (airdropError.toString().includes('429') || 
+          airdropError.toString().includes('Too Many Requests')) {
+        return res.status(429).json({ 
+          error: 'Airdrop rate limit reached. Please try again later or use an external faucet.',
+          faucetUrl: 'https://faucet.solana.com',
+          retryAfter: '60 seconds'
+        });
+      }
+      
+      // Return appropriate error
+      res.status(500).json({ 
+        error: 'Failed to request airdrop. The devnet faucet might be unavailable.',
+        details: getErrorMessage(airdropError)
+      });
+    }
   } catch (error) {
     res.status(500).json({ error: getErrorMessage(error) });
   }
@@ -676,37 +728,61 @@ app.get('/health', (req: Request, res: Response) => {
 // Create a wallet for a Telegram user
 app.post('/api/wallet/create', async (req: Request, res: Response) => {
   try {
-    const { telegramId, telegramUsername } = req.body;
-    const userId = telegramId || req.telegramUser?.id;
+    // Determine if this is a Telegram user or web user
+    const isTelegramUser = !!req.telegramUser || !!req.body.telegramId;
     
-    if (!userId) {
-      return res.status(400).json({ error: 'Telegram ID is required' });
-    }
+    // For Telegram users, use their ID
+    const telegramId = req.body.telegramId || req.telegramUser?.id;
+    const telegramUsername = req.body.telegramUsername || req.telegramUser?.username;
     
-    // Check if a wallet already exists for this user
+    // For web users, use their session ID or generate a unique ID
+    const sessionId = req.body.sessionId || req.body.publicKey || `web-${Math.random().toString(36).substring(2, 15)}`;
+    
+    // Ensure telegramId is treated as a string to prevent any type issues
+    const userId = isTelegramUser 
+      ? `telegram-${telegramId?.toString()}`
+      : `web-${sessionId}`;
+    
+    console.log(`Creating wallet for user: ${userId}, isTelegramUser: ${isTelegramUser}`);
+    
     const walletPath = path.join(WALLETS_DIR, `${userId}.json`);
     
+    // Check if a wallet already exists for this user
     if (fs.existsSync(walletPath)) {
-      // Wallet already exists, return its info
+      console.log(`Wallet already exists for user ${userId}, returning existing wallet`);
       const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
       const publicKey = new PublicKey(walletData.publicKey);
-      const balance = await connection.getBalance(publicKey);
+      
+      // Get current balance
+      let balance = 0;
+      try {
+        balance = await connection.getBalance(publicKey);
+      } catch (balanceError) {
+        console.error('Error getting balance for existing wallet:', balanceError);
+        // Continue anyway, just use 0 as balance
+      }
       
       return res.json({
         publicKey: walletData.publicKey,
         cluster: CLUSTER,
         balance: balance / 1e9, // Convert lamports to SOL
-        isNew: false
+        isNew: false,
+        isTelegramUser,
+        userId: walletData.userId || userId
       });
     }
     
     // Generate a new keypair for the user
     const newKeypair = Keypair.generate();
+    console.log(`Generated new keypair for ${userId}: ${newKeypair.publicKey.toBase58()}`);
     
-    // Create wallet data object
+    // Create wallet data object with platform information
     const walletData = {
-      telegramId: userId,
-      telegramUsername: telegramUsername || req.telegramUser?.username,
+      userId,
+      platform: isTelegramUser ? 'telegram' : 'web',
+      telegramId: isTelegramUser ? telegramId?.toString() : undefined,
+      telegramUsername: isTelegramUser ? telegramUsername : undefined,
+      sessionId: !isTelegramUser ? sessionId : undefined,
       publicKey: newKeypair.publicKey.toBase58(),
       secretKey: Array.from(newKeypair.secretKey),
       createdAt: new Date().toISOString()
@@ -714,15 +790,20 @@ app.post('/api/wallet/create', async (req: Request, res: Response) => {
     
     // Save wallet data to file
     fs.writeFileSync(walletPath, JSON.stringify(walletData, null, 2));
+    console.log(`Saved wallet data for ${userId} to ${walletPath}`);
     
     // Request an initial airdrop for new wallets on devnet
     let initialBalance = 0;
     if (CLUSTER === 'devnet') {
       try {
-        await requestAirdrop(newKeypair.publicKey.toBase58(), 1);
+        console.log(`Requesting initial airdrop for new wallet: ${newKeypair.publicKey.toBase58()}`);
+        await retryWithBackoff(async () => {
+          return await requestAirdrop(newKeypair.publicKey.toBase58(), 1);
+        });
         initialBalance = 1;
-      } catch (error) {
-        console.error('Error requesting initial airdrop for new wallet:', error);
+        console.log(`Successfully airdropped 1 SOL to ${newKeypair.publicKey.toBase58()}`);
+      } catch (airdropError) {
+        console.error('Error requesting initial airdrop for new wallet:', airdropError);
         // Continue anyway, wallet is still created
       }
     }
@@ -731,28 +812,34 @@ app.post('/api/wallet/create', async (req: Request, res: Response) => {
       publicKey: newKeypair.publicKey.toBase58(),
       cluster: CLUSTER,
       balance: initialBalance,
-      isNew: true
+      isNew: true,
+      isTelegramUser,
+      userId
     });
   } catch (error) {
-    console.error('Error creating wallet for Telegram user:', error);
+    console.error('Error creating wallet for user:', error);
     res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
-// Get wallet info for a Telegram user
+// Get wallet info for a Telegram user or by public key
 app.get('/api/wallet/info', async (req: Request, res: Response) => {
   try {
     const telegramId = req.query.telegramId as string;
-    const userWallet = req.query.publicKey as string;
+    const publicKey = req.query.publicKey as string;
+    const sessionId = req.query.sessionId as string;
     
     // Handle Telegram user wallet info
     if (telegramId) {
-      if (!fs.existsSync(path.join(WALLETS_DIR, `${telegramId}.json`))) {
+      const userId = `telegram-${telegramId}`;
+      const walletPath = path.join(WALLETS_DIR, `${userId}.json`);
+      
+      if (!fs.existsSync(walletPath)) {
         return res.json(null); // No wallet exists for this user
       }
       
       try {
-        const walletData = JSON.parse(fs.readFileSync(path.join(WALLETS_DIR, `${telegramId}.json`), 'utf-8'));
+        const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
         const publicKey = new PublicKey(walletData.publicKey);
         
         // Get current balance
@@ -762,7 +849,38 @@ app.get('/api/wallet/info', async (req: Request, res: Response) => {
           publicKey: walletData.publicKey,
           cluster: CLUSTER,
           balance: balance / 1e9, // Convert lamports to SOL
-          telegramUsername: walletData.telegramUsername
+          telegramUsername: walletData.telegramUsername,
+          platform: 'telegram',
+          userId: walletData.userId || userId
+        });
+      } catch(error) {
+        console.error('Error reading wallet data:', error);
+        return res.status(500).json({ error: 'Failed to read wallet data' });
+      }
+    }
+    
+    // Handle web session wallet info
+    if (sessionId) {
+      const userId = `web-${sessionId}`;
+      const walletPath = path.join(WALLETS_DIR, `${userId}.json`);
+      
+      if (!fs.existsSync(walletPath)) {
+        return res.json(null); // No wallet exists for this session
+      }
+      
+      try {
+        const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
+        const publicKey = new PublicKey(walletData.publicKey);
+        
+        // Get current balance
+        const balance = await connection.getBalance(publicKey);
+        
+        return res.json({
+          publicKey: walletData.publicKey,
+          cluster: CLUSTER,
+          balance: balance / 1e9, // Convert lamports to SOL
+          platform: 'web',
+          userId: walletData.userId || userId
         });
       } catch (error) {
         console.error('Error reading wallet data:', error);
@@ -770,20 +888,20 @@ app.get('/api/wallet/info', async (req: Request, res: Response) => {
       }
     }
     
-    // Handle regular wallet info
-    if (userWallet) {
+    // Handle direct public key lookup
+    if (publicKey) {
       try {
-        const publicKey = new PublicKey(userWallet);
-        const balance = await connection.getBalance(publicKey);
+        const pubKey = new PublicKey(publicKey);
+        const balance = await connection.getBalance(pubKey);
         
         return res.json({
-          publicKey: userWallet,
+          publicKey: publicKey,
           cluster: CLUSTER,
           balance: balance / 1e9, // Convert lamports to SOL
           isConnected: true
         });
       } catch (error) {
-        console.error('Error getting balance for connected wallet:', error);
+        console.error('Error getting balance for public key:', error);
         return res.status(400).json({ 
           error: 'Invalid wallet public key',
           isConnected: false
@@ -792,11 +910,43 @@ app.get('/api/wallet/info', async (req: Request, res: Response) => {
     }
     
     return res.status(400).json({ 
-      error: 'Either telegramId or publicKey is required',
+      error: 'Either telegramId, sessionId, or publicKey is required',
       isConnected: false
     });
   } catch (error) {
     console.error('Error in wallet info endpoint:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
+  }
+});
+
+// Debug endpoint to list all wallets (remove in production)
+app.get('/api/debug/wallets', (req: Request, res: Response) => {
+  try {
+    const files = fs.readdirSync(WALLETS_DIR);
+    const walletFiles = files.filter(file => file.endsWith('.json'));
+    
+    const wallets = walletFiles.map(file => {
+      const filePath = path.join(WALLETS_DIR, file);
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      
+      // Return public info only (no private keys)
+      return {
+        userId: data.userId || file.replace('.json', ''),
+        platform: data.platform || 'unknown',
+        telegramId: data.telegramId,
+        telegramUsername: data.telegramUsername,
+        sessionId: data.sessionId,
+        publicKey: data.publicKey,
+        createdAt: data.createdAt
+      };
+    });
+    
+    res.json({
+      total: wallets.length,
+      wallets
+    });
+  } catch (error) {
+    console.error('Error listing wallets:', error);
     res.status(500).json({ error: getErrorMessage(error) });
   }
 });
@@ -807,9 +957,11 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: getErrorMessage(err) });
 });
 
-// Debug logging middleware
+// Debug logging middleware for static file requests
 app.use((req, res, next) => {
-  console.log(`Received request: ${req.method} ${req.path}`);
+  if (!req.path.startsWith('/api/')) {
+    console.log(`Static file request: ${req.method} ${req.path}`);
+  }
   next();
 });
 
@@ -819,7 +971,7 @@ console.log(`Static path: ${staticPath}, exists: ${fs.existsSync(staticPath)}`);
 app.use(express.static(staticPath));
 
 // For any request that doesn't match an API route or static file, serve the React app
-app.get('*', (req, res) => {
+app.get('*', (req: Request, res: Response) => {
   const indexPath = path.join(staticPath, 'index.html');
   console.log(`Serving index.html from: ${indexPath}, exists: ${fs.existsSync(indexPath)}`);
   
@@ -835,5 +987,15 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Wallet: ${keypair.publicKey.toBase58()}`);
   console.log(`Cluster: ${CLUSTER}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Serving static files from: ${staticPath}`);
+  
+  // Create data directories if they don't exist
+  if (!fs.existsSync(path.join(__dirname, '../data'))) {
+    fs.mkdirSync(path.join(__dirname, '../data'), { recursive: true });
+  }
+  
+  if (!fs.existsSync(WALLETS_DIR)) {
+    fs.mkdirSync(WALLETS_DIR, { recursive: true });
+  }
 });

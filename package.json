@@ -1,8 +1,11 @@
 {
-  "name": "raydium-token-launcher",
+  "name": "solana-telegram-mini-app",
   "version": "1.0.0",
-  "description": "A simplified Raydium token launcher with React UI",
+  "description": "Solana Token Launcher Telegram Mini App",
   "main": "dist/server.js",
+  "engines": {
+    "node": "16.x"
+  },
   "scripts": {
     "build:backend": "tsc",
     "start:backend": "node dist/server.js",
@@ -11,15 +14,17 @@
     "build:frontend": "cd frontend && npm run build",
     "install:all": "npm install && cd frontend && npm install",
     "dev": "concurrently \"npm run dev:backend\" \"npm run start:frontend\"",
-    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
-    "build": "npm run build:backend && npm run build:frontend"
+    "start": "node dist/server.js",
+    "build": "npm run build:backend && npm run build:frontend",
+    "heroku-postbuild": "npm run install:all && npm run build"
   },
   "keywords": [
     "raydium",
     "solana",
     "token",
     "pool",
-    "liquidity"
+    "liquidity",
+    "telegram"
   ],
   "author": "",
   "license": "MIT",
@@ -34,7 +39,8 @@
     "decimal.js": "^10.4.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "express-rate-limit": "^7.5.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -42,7 +48,6 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^20.6.0",
     "concurrently": "^8.2.1",
-    "express-rate-limit": "^7.5.0",
     "nodemon": "^3.0.1",
     "process": "^0.11.10",
     "ts-node": "^10.9.1",

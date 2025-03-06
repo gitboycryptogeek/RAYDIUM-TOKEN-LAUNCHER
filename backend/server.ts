@@ -54,7 +54,7 @@ const PORT = process.env.PORT || 3001;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req: Express.Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+  fileFilter: (req: Express.Request, file: any, cb: FileFilterCallback) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {

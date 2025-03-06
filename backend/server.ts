@@ -831,7 +831,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(staticPath));
   
   // For any request that doesn't match an API route or static file, serve the React app
-  app.get('*', (req, res) => {
+  app.get('*', (req: Request, res: Response) => {
     res.sendFile(path.join(staticPath, 'index.html'));
   });
   

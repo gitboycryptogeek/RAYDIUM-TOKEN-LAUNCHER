@@ -3,6 +3,7 @@ import cors from 'cors';
 import multer, { FileFilterCallback } from 'multer';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { 
   createPool, 
   addLiquidity, 
@@ -21,7 +22,23 @@ import { createToken, getTokenBalance, getTokenMetadata } from './token';
 import { keypair, CLUSTER, connection } from './config';
 import RateLimit from 'express-rate-limit';
 import { requestAirdrop } from './config';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Keypair } from '@solana/web3.js';
+
+// Add type definition for Telegram User
+declare global {
+  namespace Express {
+    interface Request {
+      telegramUser?: {
+        id: number;
+        first_name?: string;
+        last_name?: string;
+        username?: string;
+        language_code?: string;
+      };
+    }
+  }
+}
+
 // Add error handling utility function
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -59,10 +76,110 @@ const apiLimiter = RateLimit({
 // Apply rate limiting to all API routes
 app.use('/api', apiLimiter);
 
+// Create directory for wallet data
+const WALLETS_DIR = path.join(__dirname, '../data/wallets');
+if (!fs.existsSync(WALLETS_DIR)) {
+  fs.mkdirSync(WALLETS_DIR, { recursive: true });
+}
+
 // Serve static files from public directory if it exists
 if (fs.existsSync(path.join(__dirname, '../public'))) {
   app.use(express.static(path.join(__dirname, '../public')));
 }
+
+// Telegram authentication validation function
+function validateTelegramWebAppData(initData: string, botToken: string): boolean {
+  try {
+    // Parse the data
+    const urlParams = new URLSearchParams(initData);
+    const hash = urlParams.get('hash');
+    
+    if (!hash) {
+      return false;
+    }
+    
+    // Remove the hash from the data before checking the signature
+    urlParams.delete('hash');
+    
+    // Sort the params alphabetically as per Telegram docs
+    const dataCheckString = Array.from(urlParams.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n');
+    
+    // Generate the secret key using the bot token
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest();
+    
+    // Calculate the hash of the data string
+    const calculatedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+    
+    // Check if the calculated hash matches the provided hash
+    return calculatedHash === hash;
+  } catch (error) {
+    console.error('Error validating Telegram data:', error);
+    return false;
+  }
+}
+
+// Add Telegram authentication middleware
+const telegramAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  // Skip validation in development mode or for health check endpoints
+  if (process.env.NODE_ENV === 'development' || req.path === '/health') {
+    // For development/testing, you can add a mock user
+    req.telegramUser = {
+      id: 12345678,
+      first_name: 'Test',
+      username: 'test_user'
+    };
+    return next();
+  }
+  
+  try {
+    const telegramInitData = req.headers['x-telegram-init-data'] as string;
+    
+    if (!telegramInitData) {
+      return res.status(401).json({ error: 'Unauthorized: Missing Telegram data' });
+    }
+    
+    // Bot token provided by BotFather
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    
+    if (!botToken) {
+      console.error('TELEGRAM_BOT_TOKEN not set in environment variables');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    
+    // Validate the data
+    const isValid = validateTelegramWebAppData(telegramInitData, botToken);
+    
+    if (!isValid) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid Telegram data' });
+    }
+    
+    // Extract user data from the initData
+    const urlParams = new URLSearchParams(telegramInitData);
+    const userJson = urlParams.get('user');
+    
+    if (!userJson) {
+      return res.status(401).json({ error: 'Unauthorized: User data not found' });
+    }
+    
+    // Parse user data
+    const userData = JSON.parse(userJson);
+    req.telegramUser = userData;
+    
+    next();
+  } catch (error) {
+    console.error('Telegram auth validation error:', error);
+    res.status(401).json({ error: 'Unauthorized: Invalid Telegram data' });
+  }
+};
 
 // API Routes
 
@@ -551,12 +668,110 @@ app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// Default route for SPA
-app.get('*', (req: Request, res: Response) => {
-  if (fs.existsSync(path.join(__dirname, '../public/index.html'))) {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
-  } else {
-    res.status(404).json({ error: 'Not found' });
+// Telegram specific endpoints
+// -----------------------------
+
+// Create a wallet for a Telegram user
+app.post('/api/wallet/create', async (req: Request, res: Response) => {
+  try {
+    const { telegramId, telegramUsername } = req.body;
+    const userId = telegramId || req.telegramUser?.id;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Telegram ID is required' });
+    }
+    
+    // Check if a wallet already exists for this user
+    const walletPath = path.join(WALLETS_DIR, `${userId}.json`);
+    
+    if (fs.existsSync(walletPath)) {
+      // Wallet already exists, return its info
+      const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
+      const publicKey = new PublicKey(walletData.publicKey);
+      const balance = await connection.getBalance(publicKey);
+      
+      return res.json({
+        publicKey: walletData.publicKey,
+        cluster: CLUSTER,
+        balance: balance / 1e9, // Convert lamports to SOL
+        isNew: false
+      });
+    }
+    
+    // Generate a new keypair for the user
+    const newKeypair = Keypair.generate();
+    
+    // Create wallet data object
+    const walletData = {
+      telegramId: userId,
+      telegramUsername: telegramUsername || req.telegramUser?.username,
+      publicKey: newKeypair.publicKey.toBase58(),
+      secretKey: Array.from(newKeypair.secretKey),
+      createdAt: new Date().toISOString()
+    };
+    
+    // Save wallet data to file
+    fs.writeFileSync(walletPath, JSON.stringify(walletData, null, 2));
+    
+    // Request an initial airdrop for new wallets on devnet
+    let initialBalance = 0;
+    if (CLUSTER === 'devnet') {
+      try {
+        await requestAirdrop(newKeypair.publicKey.toBase58(), 1);
+        initialBalance = 1;
+      } catch (error) {
+        console.error('Error requesting initial airdrop for new wallet:', error);
+        // Continue anyway, wallet is still created
+      }
+    }
+    
+    res.json({
+      publicKey: newKeypair.publicKey.toBase58(),
+      cluster: CLUSTER,
+      balance: initialBalance,
+      isNew: true
+    });
+  } catch (error) {
+    console.error('Error creating wallet for Telegram user:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
+  }
+});
+
+// Get wallet info for a Telegram user
+app.get('/api/wallet/info', async (req: Request, res: Response) => {
+  try {
+    const telegramId = req.query.telegramId || req.telegramUser?.id;
+    
+    if (!telegramId) {
+      return res.status(400).json({ error: 'Telegram ID is required' });
+    }
+    
+    const walletPath = path.join(WALLETS_DIR, `${telegramId}.json`);
+    
+    if (!fs.existsSync(walletPath)) {
+      return res.json(null); // No wallet exists for this user
+    }
+    
+    try {
+      const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
+      const publicKey = new PublicKey(walletData.publicKey);
+      
+      // Get current balance
+      const balance = await connection.getBalance(publicKey);
+      
+      res.json({
+        publicKey: walletData.publicKey,
+        cluster: CLUSTER,
+        balance: balance / 1e9, // Convert lamports to SOL
+        telegramUsername: walletData.telegramUsername
+      });
+    } catch (error) {
+      console.error('Error reading wallet data:', error);
+      res.status(500).json({ error: 'Failed to read wallet data' });
+    }
+  } catch (error) {
+    console.error('Error getting wallet info for Telegram user:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
@@ -593,11 +808,34 @@ app.get('/api/wallet/info', async (req: Request, res: Response) => {
   }
 });
 
+// Default route for SPA
+app.get('*', (req: Request, res: Response) => {
+  if (fs.existsSync(path.join(__dirname, '../public/index.html'))) {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
 // Error handler middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: getErrorMessage(err) });
 });
+
+// Serve static files from the React app (when in production)
+if (process.env.NODE_ENV === 'production') {
+  // Serve static files from React build folder
+  const staticPath = path.join(__dirname, '../frontend/build');
+  app.use(express.static(staticPath));
+  
+  // For any request that doesn't match an API route or static file, serve the React app
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(staticPath, 'index.html'));
+  });
+  
+  console.log(`Serving static files from: ${staticPath}`);
+}
 
 // Start server
 app.listen(PORT, () => {

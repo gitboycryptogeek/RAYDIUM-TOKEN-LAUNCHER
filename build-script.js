@@ -1,4 +1,3 @@
-cat << 'EOF' > build-script.js
 const { execSync } = require("child_process");
 const fs = require("fs");
 
@@ -23,4 +22,3 @@ try {
     console.log(`Created fallback file: dist/${file.replace(".ts", ".js")}`);
   });
 }
-EOF

@@ -47,7 +47,7 @@ function getErrorMessage(error: unknown): string {
 
 // Create Express app
 const app = express();
-app.set('trust proxy', 1); // Trust first proxys
+app.set('trust proxy', 1); // Trust first proxy
 const PORT = process.env.PORT || 3001;
 
 // Configure multer for file uploads (for token images)
@@ -67,6 +67,12 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 
+// Add logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
 // Rate limiting
 const apiLimiter = RateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -81,11 +87,6 @@ app.use('/api', apiLimiter);
 const WALLETS_DIR = path.join(__dirname, '../data/wallets');
 if (!fs.existsSync(WALLETS_DIR)) {
   fs.mkdirSync(WALLETS_DIR, { recursive: true });
-}
-
-// Serve static files from public directory if it exists
-if (fs.existsSync(path.join(__dirname, '../public'))) {
-  app.use(express.static(path.join(__dirname, '../public')));
 }
 
 // Telegram authentication validation function
@@ -741,80 +742,62 @@ app.post('/api/wallet/create', async (req: Request, res: Response) => {
 // Get wallet info for a Telegram user
 app.get('/api/wallet/info', async (req: Request, res: Response) => {
   try {
-    const telegramId = req.query.telegramId || req.telegramUser?.id;
-    
-    if (!telegramId) {
-      return res.status(400).json({ error: 'Telegram ID is required' });
-    }
-    
-    const walletPath = path.join(WALLETS_DIR, `${telegramId}.json`);
-    
-    if (!fs.existsSync(walletPath)) {
-      return res.json(null); // No wallet exists for this user
-    }
-    
-    try {
-      const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
-      const publicKey = new PublicKey(walletData.publicKey);
-      
-      // Get current balance
-      const balance = await connection.getBalance(publicKey);
-      
-      res.json({
-        publicKey: walletData.publicKey,
-        cluster: CLUSTER,
-        balance: balance / 1e9, // Convert lamports to SOL
-        telegramUsername: walletData.telegramUsername
-      });
-    } catch (error) {
-      console.error('Error reading wallet data:', error);
-      res.status(500).json({ error: 'Failed to read wallet data' });
-    }
-  } catch (error) {
-    console.error('Error getting wallet info for Telegram user:', error);
-    res.status(500).json({ error: getErrorMessage(error) });
-  }
-});
-
-app.get('/api/wallet/info', async (req: Request, res: Response) => {
-  try {
+    const telegramId = req.query.telegramId as string;
     const userWallet = req.query.publicKey as string;
     
-    if (!userWallet) {
-      return res.status(400).json({ 
-        error: 'Connected wallet public key is required',
-        isConnected: false
-      });
+    // Handle Telegram user wallet info
+    if (telegramId) {
+      if (!fs.existsSync(path.join(WALLETS_DIR, `${telegramId}.json`))) {
+        return res.json(null); // No wallet exists for this user
+      }
+      
+      try {
+        const walletData = JSON.parse(fs.readFileSync(path.join(WALLETS_DIR, `${telegramId}.json`), 'utf-8'));
+        const publicKey = new PublicKey(walletData.publicKey);
+        
+        // Get current balance
+        const balance = await connection.getBalance(publicKey);
+        
+        return res.json({
+          publicKey: walletData.publicKey,
+          cluster: CLUSTER,
+          balance: balance / 1e9, // Convert lamports to SOL
+          telegramUsername: walletData.telegramUsername
+        });
+      } catch (error) {
+        console.error('Error reading wallet data:', error);
+        return res.status(500).json({ error: 'Failed to read wallet data' });
+      }
     }
     
-    try {
-      const publicKey = new PublicKey(userWallet);
-      const balance = await connection.getBalance(publicKey);
-      
-      res.json({
-        publicKey: userWallet,
-        cluster: CLUSTER,
-        balance: balance / 1e9, // Convert lamports to SOL
-        isConnected: true
-      });
-    } catch (error) {
-      console.error('Error getting balance for connected wallet:', error);
-      res.status(400).json({ 
-        error: 'Invalid wallet public key',
-        isConnected: false
-      });
+    // Handle regular wallet info
+    if (userWallet) {
+      try {
+        const publicKey = new PublicKey(userWallet);
+        const balance = await connection.getBalance(publicKey);
+        
+        return res.json({
+          publicKey: userWallet,
+          cluster: CLUSTER,
+          balance: balance / 1e9, // Convert lamports to SOL
+          isConnected: true
+        });
+      } catch (error) {
+        console.error('Error getting balance for connected wallet:', error);
+        return res.status(400).json({ 
+          error: 'Invalid wallet public key',
+          isConnected: false
+        });
+      }
     }
+    
+    return res.status(400).json({ 
+      error: 'Either telegramId or publicKey is required',
+      isConnected: false
+    });
   } catch (error) {
+    console.error('Error in wallet info endpoint:', error);
     res.status(500).json({ error: getErrorMessage(error) });
-  }
-});
-
-// Default route for SPA
-app.get('*', (req: Request, res: Response) => {
-  if (fs.existsSync(path.join(__dirname, '../public/index.html'))) {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
-  } else {
-    res.status(404).json({ error: 'Not found' });
   }
 });
 
@@ -824,23 +807,33 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: getErrorMessage(err) });
 });
 
-// Serve static files from the React app (when in production)
-if (process.env.NODE_ENV === 'production') {
-  // Serve static files from React build folder
-  const staticPath = path.join(__dirname, '../frontend/build');
-  app.use(express.static(staticPath));
+// Debug logging middleware
+app.use((req, res, next) => {
+  console.log(`Received request: ${req.method} ${req.path}`);
+  next();
+});
+
+// Serve static files from the React app
+const staticPath = path.join(__dirname, '../frontend/build');
+console.log(`Static path: ${staticPath}, exists: ${fs.existsSync(staticPath)}`);
+app.use(express.static(staticPath));
+
+// For any request that doesn't match an API route or static file, serve the React app
+app.get('*', (req, res) => {
+  const indexPath = path.join(staticPath, 'index.html');
+  console.log(`Serving index.html from: ${indexPath}, exists: ${fs.existsSync(indexPath)}`);
   
-  // For any request that doesn't match an API route or static file, serve the React app
-  app.get('*', (req: Request, res: Response) => {
-    res.sendFile(path.join(staticPath, 'index.html'));
-  });
-  
-  console.log(`Serving static files from: ${staticPath}`);
-}
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Frontend build not found. Please check your build configuration.');
+  }
+});
 
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Wallet: ${keypair.publicKey.toBase58()}`);
   console.log(`Cluster: ${CLUSTER}`);
+  console.log(`Serving static files from: ${staticPath}`);
 });

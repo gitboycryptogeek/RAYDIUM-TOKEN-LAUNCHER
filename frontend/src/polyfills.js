@@ -5,6 +5,7 @@ import 'stream-http';
 
 // Make Buffer available globally
 window.Buffer = Buffer;
+ require.resolve("stream-http") ;
 
 // Make process available globally
 window.process = window.process || {

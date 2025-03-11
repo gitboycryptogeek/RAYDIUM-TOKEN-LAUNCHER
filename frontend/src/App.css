@@ -1,12 +1,495 @@
-/* App.css */
+:root {
+  --primary-color: #3a86ff;
+  --primary-hover: #2a76ef;
+  --secondary-color: #8338ec;
+  --accent-color: #ff006e;
+  --success-color: #38b000;
+  --warning-color: #ffbe0b;
+  --error-color: #ff5400;
+  --background-color: #f8f9fa;
+  --card-color: #ffffff;
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --border-color: #dee2e6;
+  --border-radius: 8px;
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+  --transition: all 0.3s ease;
+  
+  /* For Telegram theme support */
+  --tg-theme-bg-color: var(--background-color);
+  --tg-theme-secondary-bg-color: var(--card-color);
+  --tg-theme-text-color: var(--text-primary);
+  --tg-theme-hint-color: var(--text-secondary);
+  --tg-theme-link-color: var(--primary-color);
+  --tg-theme-button-color: var(--primary-color);
+  --tg-theme-button-text-color: white;
+}
+
+/* Dark mode - activated when Telegram is in dark mode */
+.dark-mode {
+  --background-color: #212529;
+  --card-color: #343a40;
+  --text-primary: #f8f9fa;
+  --text-secondary: #adb5bd;
+  --border-color: #495057;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 body {
-    margin: 0;
-    padding: 0;
-    background-color: #f8f9fa;
-    color: #333;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-main {
+  flex: 1;
+  padding: 1rem;
+  margin-top: 60px;
+}
+
+.app-footer {
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+/* Modern Navbar Styles */
+.modern-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background-color: var(--card-color);
+  box-shadow: var(--shadow-sm);
+  z-index: 1000;
+  transition: var(--transition);
+}
+
+.navbar-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1200px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.navbar-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.logo-icon {
+  margin-right: 0.5rem;
+  font-size: 1.5rem;
+}
+
+.navbar-toggle {
+  display: none;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.navbar-toggle span {
+  width: 25px;
+  height: 3px;
+  background-color: var(--text-primary);
+  margin: 2px 0;
+  transition: var(--transition);
+}
+
+.navbar-menu {
+  display: flex;
+  align-items: center;
+}
+
+.navbar-item {
+  margin: 0 1rem;
+  padding: 0.5rem;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-weight: 500;
+  transition: var(--transition);
+  position: relative;
+}
+
+.navbar-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background-color: var(--primary-color);
+  border-radius: 3px;
+}
+
+.navbar-item:hover {
+  color: var(--primary-color);
+}
+
+.navbar-dropdown {
+  position: relative;
+  margin: 0 1rem;
+}
+
+.navbar-dropdown-toggle {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: var(--transition);
+}
+
+.navbar-dropdown-toggle:hover {
+  color: var(--primary-color);
+}
+
+.dropdown-arrow {
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+}
+
+.navbar-dropdown-content {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 150px;
+  background-color: var(--card-color);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--border-radius);
+  padding: 0.5rem 0;
+  z-index: 10;
+}
+
+.navbar-dropdown:hover .navbar-dropdown-content {
+  display: block;
+}
+
+.dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: var(--transition);
+}
+
+.dropdown-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--primary-color);
+}
+
+.wallet-section {
+  display: flex;
+  align-items: center;
+}
+
+.connect-wallet-btn {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.connect-wallet-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+.wallet-info {
+  display: flex;
+  align-items: center;
+  background-color: var(--background-color);
+  border-radius: var(--border-radius);
+  padding: 0.25rem 0.5rem;
+}
+
+.wallet-address {
+  font-family: monospace;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.wallet-balance {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-right: 0.5rem;
+}
+
+.disconnect-btn {
+  background: none;
+  border: none;
+  color: var(--error-color);
+  cursor: pointer;
+  transition: var(--transition);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.disconnect-btn:hover {
+  transform: scale(1.1);
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: var(--card-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-lg);
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: var(--transition);
+}
+
+.modal-close:hover {
+  color: var(--error-color);
+}
+
+.modal-body {
+  padding: 1rem;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .navbar-toggle {
+    display: flex;
   }
   
-  .App {
-    min-height: 100vh;
-    padding: 20px 0;
+  .navbar-menu {
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    background-color: var(--card-color);
+    box-shadow: var(--shadow-md);
+    padding: 1rem 0;
+    display: none;
   }
+  
+  .navbar-menu.active {
+    display: flex;
+  }
+  
+  .navbar-item, .navbar-dropdown {
+    width: 100%;
+    margin: 0.25rem 0;
+    padding: 0.5rem 1rem;
+  }
+  
+  .navbar-dropdown-content {
+    position: static;
+    box-shadow: none;
+    padding: 0 0 0 1rem;
+  }
+  
+  .dropdown-item {
+    padding: 0.5rem;
+  }
+}
+
+/* Generic Utility Classes */
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--primary-color);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-alert {
+  background-color: rgba(255, 84, 0, 0.1);
+  color: var(--error-color);
+  border-left: 4px solid var(--error-color);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--border-radius);
+}
+
+.success-alert {
+  background-color: rgba(56, 176, 0, 0.1);
+  color: var(--success-color);
+  border-left: 4px solid var(--success-color);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--border-radius);
+}
+
+/* Button styles */
+.action-button {
+  padding: 0.5rem 1rem;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  border: none;
+}
+
+.action-button.primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.action-button.primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.action-button.secondary {
+  background-color: transparent;
+  color: var(--primary-color);
+  border: 1px solid var(--primary-color);
+}
+
+.action-button.secondary:hover {
+  background-color: rgba(58, 134, 255, 0.05);
+}
+
+.action-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Form element styles */
+.modern-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  transition: var(--transition);
+}
+
+.modern-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(58, 134, 255, 0.1);
+}
+
+.modern-slider {
+  width: 100%;
+  height: 5px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border-color);
+  border-radius: 5px;
+  outline: none;
+}
+
+.modern-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+}
+
+.slider-value {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* Telegram specific styles */
+.telegram-app {
+  background-color: var(--tg-theme-bg-color);
+  color: var(--tg-theme-text-color);
+}
+
+.telegram-app .navbar-container,
+.telegram-app .modal-content,
+.telegram-app .wallet-info {
+  background-color: var(--tg-theme-secondary-bg-color);
+}
+
+.telegram-app .navbar-item,
+.telegram-app .navbar-dropdown-toggle,
+.telegram-app .navbar-logo {
+  color: var(--tg-theme-text-color);
+}
+
+.telegram-app .connect-wallet-btn,
+.telegram-app .action-button.primary {
+  background-color: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+}
+
+.telegram-app .action-button.secondary {
+  color: var(--tg-theme-link-color);
+  border-color: var(--tg-theme-link-color);
+}

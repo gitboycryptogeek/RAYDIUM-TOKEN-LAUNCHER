@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useNavigate, useParams } from 'react-router-dom';
 import './Home.css';
-import TokenCreationForm from './tokenCreationForm';
-import PendingPoolManagement from './pendingPoolManagement';
 import { useWallet } from '../components/telegramWalletAdapter';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
@@ -14,9 +13,347 @@ const getExplorerUrl = (type, address, cluster) => {
   return `${baseUrl}/${type}/${address}${clusterParam}`;
 };
 
+// Token Card Component
+const TokenCard = ({ token, onSelect, isSelected, hasPool }) => {
+  return (
+    <div 
+      className={`token-card ${isSelected ? 'selected' : ''}`}
+      onClick={() => onSelect(token)}
+    >
+      <div className="token-icon">
+        {token.symbol ? token.symbol.charAt(0) : '#'}
+      </div>
+      <div className="token-details">
+        <h3>{token.symbol || `${token.mint.slice(0, 4)}...`}</h3>
+        <p className="token-balance">{token.balance.toFixed(4)}</p>
+        {hasPool ? (
+          <span className="pool-badge">Has Pool</span>
+        ) : (
+          <span className="no-pool-badge">No Pool</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Pool Management Tab Component - Add Liquidity
+const AddLiquidityTab = ({ 
+  selectedToken, 
+  selectedPool, 
+  handleSubmit, 
+  loading,
+  liquidityForm, 
+  handleChange, 
+  connected 
+}) => {
+  return (
+    <div className="tab-pane active">
+      <div className="form-card">
+        <div className="form-group">
+          <label>Amount</label>
+          <input 
+            type="number" 
+            value={liquidityForm.amount} 
+            onChange={(e) => handleChange('addLiquidity', 'amount', e.target.value)}
+            min="0.000001"
+            step="0.000001"
+            className="modern-input"
+          />
+        </div>
+        <div className="form-group">
+          <label>Fixed Side</label>
+          <div className="toggle-switch">
+            <input 
+              type="radio"
+              id="sol-toggle"
+              name="fixedSide"
+              checked={liquidityForm.fixedSide === 'sol'}
+              onChange={() => handleChange('addLiquidity', 'fixedSide', 'sol')}
+            />
+            <label htmlFor="sol-toggle">SOL</label>
+            
+            <input 
+              type="radio"
+              id="token-toggle"
+              name="fixedSide"
+              checked={liquidityForm.fixedSide === 'token'}
+              onChange={() => handleChange('addLiquidity', 'fixedSide', 'token')}
+            />
+            <label htmlFor="token-toggle">{selectedToken.symbol || 'Token'}</label>
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Slippage (%)</label>
+          <div className="slider-container">
+            <input 
+              type="range" 
+              min="0.1" 
+              max="5" 
+              step="0.1"
+              value={liquidityForm.slippage}
+              onChange={(e) => handleChange('addLiquidity', 'slippage', e.target.value)}
+              className="modern-slider"
+            />
+            <span className="slider-value">{liquidityForm.slippage}%</span>
+          </div>
+        </div>
+        <button 
+          onClick={() => handleSubmit('addLiquidity')} 
+          disabled={loading || !connected}
+          className="action-button primary"
+        >
+          {loading ? 'Adding...' : 'Add Liquidity'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Pool Management Tab Component - Remove Liquidity
+const RemoveLiquidityTab = ({ 
+  selectedToken, 
+  selectedPool, 
+  handleSubmit, 
+  loading,
+  withdrawForm, 
+  handleChange, 
+  connected 
+}) => {
+  return (
+    <div className="tab-pane">
+      <div className="form-card">
+        <div className="form-group">
+          <label>LP Amount</label>
+          <input 
+            type="number" 
+            value={withdrawForm.lpAmount} 
+            onChange={(e) => handleChange('removeLiquidity', 'lpAmount', e.target.value)}
+            min="0.000001"
+            step="0.000001"
+            className="modern-input"
+          />
+          <small className="input-help">
+            Available LP tokens: {selectedPool.lpBalance?.balance || 0}
+          </small>
+        </div>
+        <div className="form-group">
+          <label>Slippage (%)</label>
+          <div className="slider-container">
+            <input 
+              type="range" 
+              min="0.1" 
+              max="5" 
+              step="0.1"
+              value={withdrawForm.slippage}
+              onChange={(e) => handleChange('removeLiquidity', 'slippage', e.target.value)}
+              className="modern-slider"
+            />
+            <span className="slider-value">{withdrawForm.slippage}%</span>
+          </div>
+        </div>
+        <button 
+          onClick={() => handleSubmit('removeLiquidity')} 
+          disabled={loading || !connected || (selectedPool.lpBalance?.balance <= 0)}
+          className="action-button primary"
+        >
+          {loading ? 'Removing...' : 'Remove Liquidity'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Pool Management Tab Component - Swap
+const SwapTab = ({ 
+  selectedToken, 
+  selectedPool, 
+  handleSubmit, 
+  loading,
+  swapForm, 
+  handleChange, 
+  connected 
+}) => {
+  return (
+    <div className="tab-pane">
+      <div className="form-card">
+        <div className="form-group">
+          <label>From</label>
+          <div className="toggle-switch">
+            <input 
+              type="radio"
+              id="from-sol"
+              name="fromToken"
+              checked={swapForm.fromToken === 'sol'}
+              onChange={() => handleChange('swap', 'fromToken', 'sol')}
+            />
+            <label htmlFor="from-sol">SOL</label>
+            
+            <input 
+              type="radio"
+              id="from-token"
+              name="fromToken"
+              checked={swapForm.fromToken === 'token'}
+              onChange={() => handleChange('swap', 'fromToken', 'token')}
+            />
+            <label htmlFor="from-token">{selectedToken.symbol || 'Token'}</label>
+          </div>
+        </div>
+        <div className="swap-arrow">
+          <span>↓</span>
+        </div>
+        <div className="form-group">
+          <label>To</label>
+          <div className="static-input">
+            {swapForm.fromToken === 'sol' ? (selectedToken.symbol || 'Token') : 'SOL'}
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Amount</label>
+          <input 
+            type="number" 
+            value={swapForm.amount} 
+            onChange={(e) => handleChange('swap', 'amount', e.target.value)}
+            min="0.000001"
+            step="0.000001"
+            className="modern-input"
+          />
+        </div>
+        <div className="form-group">
+          <label>Slippage (%)</label>
+          <div className="slider-container">
+            <input 
+              type="range" 
+              min="0.1" 
+              max="5" 
+              step="0.1"
+              value={swapForm.slippage}
+              onChange={(e) => handleChange('swap', 'slippage', e.target.value)}
+              className="modern-slider"
+            />
+            <span className="slider-value">{swapForm.slippage}%</span>
+          </div>
+        </div>
+        <button 
+          onClick={() => handleSubmit('swap')} 
+          disabled={loading || !connected}
+          className="action-button primary"
+        >
+          {loading ? 'Swapping...' : 'Swap'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Pool Management Tabs Container
+const PoolManagementTabs = ({ 
+  selectedToken, 
+  selectedPool, 
+  handleSubmit, 
+  loading,
+  liquidityForm, 
+  withdrawForm, 
+  swapForm, 
+  handleChange, 
+  connected 
+}) => {
+  const [activeTab, setActiveTab] = useState('addLiquidity');
+
+  return (
+    <div className="pool-management">
+      <div className="pool-info-card">
+        <h2>Pool Details</h2>
+        <div className="pool-info-grid">
+          <div className="info-item">
+            <span className="info-label">Token</span>
+            <span className="info-value">{selectedToken.symbol || selectedToken.mint.slice(0, 10)}...</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Pool ID</span>
+            <span className="info-value">{selectedPool.poolId.slice(0, 10)}...</span>
+          </div>
+          {selectedPool.lpBalance && (
+            <div className="info-item">
+              <span className="info-label">LP Balance</span>
+              <span className="info-value">{selectedPool.lpBalance.balance}</span>
+            </div>
+          )}
+          {selectedPool.initialPrice && (
+            <div className="info-item">
+              <span className="info-label">Initial Price</span>
+              <span className="info-value">{selectedPool.initialPrice.toFixed(9)} SOL</span>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div className="actions-tabs">
+        <div className="tabs-header">
+          <button 
+            className={`tab-button ${activeTab === 'addLiquidity' ? 'active' : ''}`}
+            onClick={() => setActiveTab('addLiquidity')}
+          >
+            Add Liquidity
+          </button>
+          <button 
+            className={`tab-button ${activeTab === 'removeLiquidity' ? 'active' : ''}`}
+            onClick={() => setActiveTab('removeLiquidity')}
+          >
+            Remove Liquidity
+          </button>
+          <button 
+            className={`tab-button ${activeTab === 'swap' ? 'active' : ''}`}
+            onClick={() => setActiveTab('swap')}
+          >
+            Swap
+          </button>
+        </div>
+        
+        <div className="tab-content">
+          {activeTab === 'addLiquidity' && (
+            <AddLiquidityTab
+              selectedToken={selectedToken}
+              selectedPool={selectedPool}
+              handleSubmit={handleSubmit}
+              loading={loading}
+              liquidityForm={liquidityForm}
+              handleChange={handleChange}
+              connected={connected}
+            />
+          )}
+          
+          {activeTab === 'removeLiquidity' && (
+            <RemoveLiquidityTab
+              selectedToken={selectedToken}
+              selectedPool={selectedPool}
+              handleSubmit={handleSubmit}
+              loading={loading}
+              withdrawForm={withdrawForm}
+              handleChange={handleChange}
+              connected={connected}
+            />
+          )}
+          
+          {activeTab === 'swap' && (
+            <SwapTab
+              selectedToken={selectedToken}
+              selectedPool={selectedPool}
+              handleSubmit={handleSubmit}
+              loading={loading}
+              swapForm={swapForm}
+              handleChange={handleChange}
+              connected={connected}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Main Home Component
 const Home = () => {
-  const { publicKey, connected, balance, cluster } = useWallet();
-  const [activeTab, setActiveTab] = useState('create');
+  const { publicKey, connected, cluster } = useWallet(); 
   const [userTokens, setUserTokens] = useState([]);
   const [userPools, setUserPools] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -26,10 +363,13 @@ const Home = () => {
   const [selectedToken, setSelectedToken] = useState(null);
   const [selectedPool, setSelectedPool] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const navigate = useNavigate();
+  const { tokenId, poolId } = useParams();
+  
   
   const [liquidityForm, setLiquidityForm] = useState({
     amount: '1',
-    fixedSide: 'sol', // 'sol' or 'token'
+    fixedSide: 'sol',
     slippage: '1'
   });
   
@@ -40,10 +380,13 @@ const Home = () => {
   
   const [swapForm, setSwapForm] = useState({
     amount: '0.1',
-    fromToken: 'sol', // 'sol' or 'token'
+    fromToken: 'sol',
     slippage: '1'
   });
+
+  // Delay helper function
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
   // Fetch user tokens with retry logic
   const fetchUserTokens = useCallback(async (showLoading = true) => {
     if (!connected || !publicKey) return;
@@ -63,7 +406,6 @@ const Home = () => {
         try {
           const response = await axios.get(`${API_URL}/token/list`, {
             params: { publicKey },
-            // Add a longer timeout 
             timeout: 30000
           });
           
@@ -78,7 +420,6 @@ const Home = () => {
           retries--;
           
           if (retries > 0) {
-            // Use exponential backoff with delay
             await delay(initialDelay * Math.pow(3, 3-retries));
           }
         }
@@ -87,15 +428,13 @@ const Home = () => {
       console.log('Fetched tokens:', tokensData);
       setUserTokens(tokensData);
       
-      // If not successful after all retries, look for local data
+      // Fallback to local storage if API fails
       if (!success) {
-        // Try to get tokens from localStorage as a fallback
         try {
           const localTokens = localStorage.getItem('localTokens');
           if (localTokens) {
             const parsedTokens = JSON.parse(localTokens);
             if (Array.isArray(parsedTokens) && parsedTokens.length > 0) {
-              console.log('Using locally stored tokens as fallback:', parsedTokens);
               setUserTokens(parsedTokens);
             }
           }
@@ -103,7 +442,7 @@ const Home = () => {
           console.error('Error getting tokens from local storage:', e);
         }
       } else {
-        // If successful, store tokens in localStorage for future fallback
+        // Store successful results for future fallback
         try {
           localStorage.setItem('localTokens', JSON.stringify(tokensData));
         } catch (e) {
@@ -118,12 +457,20 @@ const Home = () => {
           setSelectedToken(updatedToken);
         }
       }
+
+      // If we have a tokenId param but no selected token, try to select it
+      if (tokenId && !selectedToken) {
+        const token = tokensData.find(t => t.mint === tokenId);
+        if (token) {
+          setSelectedToken(token);
+        }
+      }
     } catch (error) {
       console.error('Error fetching user tokens:', error);
     } finally {
       if (showLoading) setIsRefreshing(false);
     }
-  }, [connected, publicKey, selectedToken]);
+  }, [connected, publicKey, selectedToken, tokenId]);
   
   // Fetch user pools with retry logic
   const fetchUserPools = useCallback(async (showLoading = true) => {
@@ -137,14 +484,10 @@ const Home = () => {
       let success = false;
       let poolsData = [];
       
-      // Add random jitter to prevent synchronized requests
-      const initialDelay = 1500 + Math.floor(Math.random() * 500);
-      
       while (retries > 0 && !success) {
         try {
           const response = await axios.get(`${API_URL}/pool/list`, {
             params: { publicKey },
-            // Add a longer timeout
             timeout: 30000
           });
           
@@ -159,15 +502,12 @@ const Home = () => {
           retries--;
           
           if (retries > 0) {
-            // Use exponential backoff with delay
-            await delay(initialDelay * Math.pow(3, 3-retries));
+            await delay(1500 * Math.pow(3, 3-retries));
           }
         }
       }
       
-      console.log('Fetched pools:', poolsData);
-      
-      // Get local pools to merge with API response (even if API failed)
+      // Merge with local pools
       const localPools = localStorage.getItem('localPools');
       let parsedLocalPools = [];
       
@@ -176,12 +516,10 @@ const Home = () => {
           parsedLocalPools = JSON.parse(localPools);
           
           if (success) {
-            // Filter out local pools that now exist in the API response
+            // Filter out duplicates
             parsedLocalPools = parsedLocalPools.filter(lp => 
               !poolsData.some(p => p.baseMint === lp.baseMint && p.quoteMint === lp.quoteMint)
             );
-            
-            // Update localStorage with filtered pools
             localStorage.setItem('localPools', JSON.stringify(parsedLocalPools));
           }
         } catch (e) {
@@ -191,26 +529,49 @@ const Home = () => {
       
       // Merge API pools with local pools
       const mergedPools = [...poolsData, ...parsedLocalPools];
-      
       setUserPools(mergedPools);
       
-      // If the selected pool is in the list, update it with fresh data
+      // Update selected pool if needed
       if (selectedPool) {
         const updatedPool = mergedPools.find(p => p.poolId === selectedPool.poolId);
         if (updatedPool) {
           setSelectedPool(updatedPool);
         }
       }
+
+      // If we have a selected token but no selected pool, try to find a matching pool
+      if (selectedToken && !selectedPool) {
+        const matchingPool = mergedPools.find(p => 
+          p.baseMint === selectedToken.mint || p.quoteMint === selectedToken.mint
+        );
+        if (matchingPool) {
+          setSelectedPool(matchingPool);
+        }
+      }
+
+      // If we have a poolId param but no selected pool, try to select it
+      if (poolId && !selectedPool) {
+        const pool = mergedPools.find(p => p.poolId === poolId);
+        if (pool) {
+          setSelectedPool(pool);
+          // Also try to find and set the associated token
+          const token = userTokens.find(t => 
+            t.mint === pool.baseMint || t.mint === pool.quoteMint
+          );
+          if (token) {
+            setSelectedToken(token);
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching user pools:', error);
       
-      // If all API attempts failed, just use local pools
+      // Fallback to local pools
       try {
         const localPools = localStorage.getItem('localPools');
         if (localPools) {
           const parsedPools = JSON.parse(localPools);
           if (Array.isArray(parsedPools)) {
-            console.log('Using locally stored pools as fallback:', parsedPools);
             setUserPools(parsedPools);
           }
         }
@@ -220,7 +581,7 @@ const Home = () => {
     } finally {
       if (showLoading) setIsRefreshing(false);
     }
-  }, [connected, publicKey, selectedPool]);
+  }, [connected, publicKey, selectedPool, selectedToken, poolId, userTokens]);
   
   // Combined refresh function
   const refreshData = useCallback(async () => {
@@ -246,29 +607,22 @@ const Home = () => {
   // Fetch data when wallet is connected
   useEffect(() => {
     if (connected && publicKey) {
-      // Initial load with staggered requests
       const loadInitialData = async () => {
-        // Load tokens first
         await fetchUserTokens();
-        // Small delay before loading pools 
         await delay(500);
         await fetchUserPools();
       };
       
       loadInitialData();
   
-      // Set up a refresh interval with lower frequency
       const intervalId = setInterval(async () => {
         await fetchUserTokens(false);
-        // Small delay between requests to avoid rate limiting
         await delay(1000);
         await fetchUserPools(false);
-      }, 30000); // Increased to 30 seconds to avoid rate limiting
+      }, 30000);
   
-      // Clear the interval when component unmounts
       return () => clearInterval(intervalId);
     } else {
-      // Reset state when wallet is disconnected
       setUserTokens([]);
       setUserPools([]);
       setSelectedToken(null);
@@ -293,7 +647,7 @@ const Home = () => {
     }
   };
   
-  // Enhanced token selection with support for tokens without pools
+  // Token selection with pool finding
   const handleTokenSelect = (token) => {
     setSelectedToken(token);
     
@@ -302,14 +656,13 @@ const Home = () => {
       p && (p.baseMint === token.mint || p.quoteMint === token.mint)
     );
     
-    // If pool exists, use it
     if (pool) {
       setSelectedPool(pool);
-      setActiveTab('manage');
+      navigate(`/token/${token.mint}`);
       return;
     }
     
-    // If no pool exists, check if there are any pools in the local storage
+    // Check local pools
     const localPools = localStorage.getItem('localPools');
     let parsedLocalPools = [];
     
@@ -321,19 +674,17 @@ const Home = () => {
       }
     }
     
-    // Find if there's a local pool for this token
     const localPool = parsedLocalPools.find(p => 
       p && (p.baseMint === token.mint || p.quoteMint === token.mint)
     );
     
     if (localPool) {
       setSelectedPool(localPool);
-      setActiveTab('manage');
+      navigate(`/token/${token.mint}`);
       return;
     }
     
-    // If still no pool, we can create a custom placeholder pool object
-    // This is helpful when only the token was created but market/pool creation failed
+    // Create placeholder pool
     const solMint = 'So11111111111111111111111111111111111111112';
     const placeholderPool = {
       poolId: 'local-' + token.mint.substring(0, 8),
@@ -343,13 +694,13 @@ const Home = () => {
       baseSymbol: token.symbol || token.mint.substring(0, 4),
       quoteSymbol: 'SOL',
       lpBalance: { balance: 0 },
-      isPending: true, // Flag to indicate this is not a real pool yet
+      isPending: true,
       isPlaceholder: true
     };
     
     setSelectedPool(placeholderPool);
     
-    // Add to local storage for future use
+    // Add to local storage
     parsedLocalPools.push(placeholderPool);
     try {
       localStorage.setItem('localPools', JSON.stringify(parsedLocalPools));
@@ -357,7 +708,7 @@ const Home = () => {
       console.error('Error saving local pools:', e);
     }
     
-    setActiveTab('manage');
+    navigate(`/token/${token.mint}`);
   };
 
   // Airdrop handling
@@ -382,13 +733,9 @@ const Home = () => {
         throw new Error(response.data.error);
       }
       
-      // Show success message
       setSuccess(`Successfully airdropped 1 SOL to your wallet. It may take a few seconds to appear.`);
       
-      // Wait 5 seconds before updating balance display
       setTimeout(() => {
-        // You would typically refresh wallet info here
-        // If you have a refreshWalletInfo function, call it here
         refreshData();
       }, 5000);
       
@@ -400,60 +747,7 @@ const Home = () => {
     }
   };
   
-  // Handle token creation success
-  const handleTokenCreationSuccess = useCallback((tokenData) => {
-    setResult(tokenData);
-    setSuccess(`Token ${tokenData.name} (${tokenData.symbol}) created successfully!`);
-    
-    // If token has a pool, select it
-    if (tokenData.pool) {
-      const newToken = {
-        mint: tokenData.mint,
-        symbol: tokenData.symbol,
-        name: tokenData.name,
-        balance: tokenData.initialSupply || 0,
-        decimals: tokenData.decimals
-      };
-      
-      setSelectedToken(newToken);
-      setSelectedPool(tokenData.pool);
-    }
-    
-    // Refresh data with a short delay to allow blockchain to update
-    setTimeout(() => {
-      fetchUserTokens();
-      fetchUserPools();
-    }, 2000);
-  }, [fetchUserTokens, fetchUserPools]);
-  
-  // Handle pool creation success
-  const handlePoolCreated = useCallback((poolData) => {
-    // Update the selected pool
-    setSelectedPool(poolData);
-    
-    // Show success message
-    setSuccess(`Pool created successfully!`);
-    
-    // Refresh data
-    fetchUserPools();
-    
-    // Update local storage
-    try {
-      const localPools = localStorage.getItem('localPools');
-      let parsedLocalPools = localPools ? JSON.parse(localPools) : [];
-      
-      // Replace the placeholder pool with the real one
-      const updatedPools = parsedLocalPools.filter(p => 
-        !(p.baseMint === poolData.baseMint && p.isPending)
-      );
-      
-      localStorage.setItem('localPools', JSON.stringify(updatedPools));
-    } catch (e) {
-      console.error('Error updating local pools:', e);
-    }
-  }, [fetchUserPools]);
-  
-  // Handle form submission for liquidity and swap operations
+  // Form submission for liquidity and swap operations
   const handleSubmit = async (formType) => {
     if (!connected || !publicKey) {
       setError('Please connect your wallet first');
@@ -502,6 +796,10 @@ const Home = () => {
           
           if (selectedPool.isPending || selectedPool.isPlaceholder) {
             throw new Error('This pool is pending creation. Create a pool first.');
+          }
+          
+          if (!selectedPool.lpBalance || selectedPool.lpBalance.balance <= 0) {
+            throw new Error('You do not have any LP tokens to remove');
           }
           
           const payload = {
@@ -559,298 +857,154 @@ const Home = () => {
   };
   
   return (
-    <div className='container'>
-      <header className='header'>
-        <h1>Solana Token Launcher</h1>
-        <div className='wallet-info'>
-          <p><strong>Wallet:</strong> {connected ? (publicKey ? `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}` : 'Loading...') : 'Not Connected'}</p>
-          <p><strong>Network:</strong> {cluster || 'Loading...'}</p>
-          <p>
-            <strong>Balance:</strong> {connected ? (balance !== undefined ? balance.toFixed(4) : 'Loading...') : '0.0000'} SOL
-            {connected && cluster === 'devnet' && (
-              <button 
-                className='airdrop-button' 
-                onClick={requestAirdrop}
-                disabled={airdropLoading}
-              >
-                {airdropLoading ? 'Requesting...' : 'Get 1 SOL'}
-              </button>
-            )}
-          </p>
-          {connected && (
-            <button 
-              className='refresh-button' 
-              onClick={refreshData}
-              disabled={isRefreshing}
+    <div className="modern-container">
+      <div className="dashboard-header">
+        <h1>My Token Dashboard</h1>
+        <div className="header-actions">
+        {connected && cluster === 'devnet' && (
+  <button 
+    className="airdrop-button" 
+    onClick={requestAirdrop}
+    disabled={airdropLoading}
+  >
+    {airdropLoading ? 'Requesting...' : 'Get 1 SOL'}
+  </button>
+)}
+          <button 
+            className="refresh-button" 
+            onClick={refreshData}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? (
+              <>
+                <span className="loading-spinner small"></span>
+                <span className="refresh-text">Refreshing</span>
+              </>
+            ) : 'Refresh'}
+          </button>
+        </div>
+      </div>
+      
+      {error && <div className="error-alert">{error}</div>}
+      {success && <div className="success-alert">{success}</div>}
+      
+      <div className="dashboard-layout">
+        <section className="token-sidebar">
+          <div className="token-header">
+            <h2>My Tokens</h2>
+            {isRefreshing && <div className="loading-spinner"></div>}
+          </div>
+          
+          {!connected ? (
+            <div className="connect-prompt">
+              <p>Connect your wallet to view your tokens</p>
+            </div>
+          ) : userTokens.length > 0 ? (
+            <div className="tokens-grid">
+              {userTokens.map((token) => (
+                <TokenCard 
+                  key={token.mint}
+                  token={token}
+                  onSelect={handleTokenSelect}
+                  isSelected={selectedToken?.mint === token.mint}
+                  hasPool={userPools.some(p => p && (p.baseMint === token.mint || p.quoteMint === token.mint))}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <p>No tokens found</p>
+              <p className="secondary-text">Create a token to get started!</p>
+            </div>
+          )}
+        </section>
+        
+        <section className="content-area">
+          {!selectedToken ? (
+            <div className="welcome-panel">
+              <h2>Welcome to Solana Token Hub</h2>
+              <p>Select a token from the sidebar or create a new token to get started.</p>
+              <div className="action-buttons">
+                <button 
+                  className="action-button primary"
+                  onClick={() => navigate('/create-token')}
+                >
+                  Create Token
+                </button>
+                <button 
+                  className="action-button secondary"
+                  onClick={() => navigate('/create-pool')}
+                >
+                  Create Pool
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="token-detail-panel">
+              <div className="token-header">
+                <div className="token-title">
+                  <h2>{selectedToken.symbol || 'Token'}</h2>
+                  <span className="token-mint">{selectedToken.mint.slice(0, 6)}...{selectedToken.mint.slice(-4)}</span>
+                </div>
+                <a 
+                  href={getExplorerUrl('address', selectedToken.mint, cluster)}
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="explorer-link"
+                >
+                  View on Explorer
+                </a>
+              </div>
+              
+              {selectedPool && !selectedPool.isPending && !selectedPool.isPlaceholder ? (
+                <PoolManagementTabs 
+                  selectedToken={selectedToken}
+                  selectedPool={selectedPool}
+                  handleSubmit={handleSubmit}
+                  loading={loading}
+                  liquidityForm={liquidityForm}
+                  withdrawForm={withdrawForm}
+                  swapForm={swapForm}
+                  handleChange={handleChange}
+                  connected={connected}
+                />
+              ) : (
+                <div className="create-pool-prompt">
+                  <h3>No Pool Found</h3>
+                  <p>This token doesn't have a liquidity pool yet.</p>
+                  <button 
+                    className="action-button primary"
+                    onClick={() => navigate('/create-pool')}
+                  >
+                    Create Pool
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+      
+      {/* Result Display */}
+      {result && (
+        <div className="result-panel">
+          <div className="result-header">
+            <h3>Transaction Result</h3>
+            <button className="close-button" onClick={() => setResult(null)}>×</button>
+          </div>
+          <pre className="result-data">{JSON.stringify(result, null, 2)}</pre>
+          {result.txId && (
+            <a 
+              href={getExplorerUrl('tx', result.txId, cluster)} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="explorer-link"
             >
-              {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
-            </button>
+              View Transaction on Solana Explorer
+            </a>
           )}
         </div>
-      </header>
-      
-      {/* Tokens sidebar */}
-      <div className='sidebar'>
-        <h3>Your Tokens</h3>
-        {!connected ? (
-          <p>Connect your wallet to see your tokens</p>
-        ) : isRefreshing ? (
-          <p>Loading tokens...</p>
-        ) : userTokens.length > 0 ? (
-          <div className='token-list'>
-            {userTokens.map((token) => (
-              <div 
-                key={token.mint} 
-                className={`token-item ${selectedToken?.mint === token.mint ? 'selected' : ''}`}
-                onClick={() => handleTokenSelect(token)}
-              >
-                <p><strong>{token.symbol || `${token.mint.slice(0, 4)}...${token.mint.slice(-4)}`}</strong></p>
-                <p>Balance: {typeof token.balance === 'number' ? token.balance.toFixed(6) : token.balance}</p>
-                {userPools.some(p => p && (p.baseMint === token.mint || p.quoteMint === token.mint)) && (
-                  <p className="pool-badge">Has Pool</p>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div>
-            <p>No tokens found</p>
-            <p className="help-text">Create a token to get started!</p>
-          </div>
-        )}
-      </div>
-      
-      <div className='tabs'>
-        <button 
-          className={activeTab === 'create' ? 'active' : ''}
-          onClick={() => setActiveTab('create')}
-        >
-          Create Token & Pool
-        </button>
-        <button 
-          className={activeTab === 'manage' ? 'active' : ''}
-          onClick={() => setActiveTab('manage')}
-          disabled={!selectedToken} // Only disable if no token is selected
-        >
-          Manage Pool
-        </button>
-      </div>
-      
-      <div className='content'>
-        {/* Token Creation Form */}
-        {activeTab === 'create' && (
-          <TokenCreationForm onSuccess={handleTokenCreationSuccess} refreshData={refreshData} />
-        )}
-        
-        {/* Pending Pool Management */}
-        {activeTab === 'manage' && selectedToken && selectedPool && (selectedPool.isPending || selectedPool.isPlaceholder) && (
-          <PendingPoolManagement 
-            token={selectedToken} 
-            onPoolCreated={handlePoolCreated} 
-            refreshData={refreshData}
-          />
-        )}
-        
-        {/* Manage Pool Form (Add/Remove Liquidity, Swap) */}
-        {activeTab === 'manage' && selectedToken && selectedPool && !selectedPool.isPending && !selectedPool.isPlaceholder && (
-          <div className='pool-management'>
-            <div className='pool-info'>
-              <h2>Pool Management</h2>
-              <p><strong>Selected Token:</strong> {selectedToken.symbol || selectedToken.mint.slice(0, 10)}...</p>
-              <p><strong>Pool ID:</strong> {selectedPool.poolId.slice(0, 10)}...</p>
-              {selectedPool.lpBalance && (
-                <p><strong>Your LP Balance:</strong> {selectedPool.lpBalance.balance}</p>
-              )}
-              {selectedPool.initialPrice && (
-                <p><strong>Initial Price:</strong> {selectedPool.initialPrice.toFixed(9)} SOL per token</p>
-              )}
-            </div>
-            
-            <div className='accordion'>
-              {/* Add Liquidity Section */}
-              <div className='accordion-item'>
-                <h3 className='accordion-header'>Add Liquidity</h3>
-                <div className='accordion-content'>
-                  <div className='form-group'>
-                    <label>Amount:</label>
-                    <input 
-                      type='number' 
-                      value={liquidityForm.amount} 
-                      onChange={(e) => handleChange('addLiquidity', 'amount', e.target.value)}
-                      min='0.000001'
-                      step='0.000001'
-                    />
-                  </div>
-                  <div className='form-group'>
-                    <label>Fixed Side:</label>
-                    <select
-                      value={liquidityForm.fixedSide}
-                      onChange={(e) => handleChange('addLiquidity', 'fixedSide', e.target.value)}
-                    >
-                      <option value='sol'>SOL</option>
-                      <option value='token'>{selectedToken.symbol || 'Token'}</option>
-                    </select>
-                  </div>
-                  <div className='form-group'>
-                    <label>Slippage (%):</label>
-                    <input 
-                      type='number' 
-                      value={liquidityForm.slippage} 
-                      onChange={(e) => handleChange('addLiquidity', 'slippage', e.target.value)}
-                      min='0.01'
-                      max='100'
-                      step='0.01'
-                    />
-                  </div>
-                  <button 
-                    onClick={() => handleSubmit('addLiquidity')} 
-                    disabled={loading || !connected}
-                    className='submit-btn'
-                  >
-                    {loading ? 'Adding...' : 'Add Liquidity'}
-                  </button>
-                </div>
-              </div>
-              
-              {/* Remove Liquidity Section */}
-              <div className='accordion-item'>
-                <h3 className='accordion-header'>Remove Liquidity</h3>
-                <div className='accordion-content'>
-                  <div className='form-group'>
-                    <label>LP Amount:</label>
-                    <input 
-                      type='number' 
-                      value={withdrawForm.lpAmount} 
-                      onChange={(e) => handleChange('removeLiquidity', 'lpAmount', e.target.value)}
-                      min='0.000001'
-                      step='0.000001'
-                    />
-                  </div>
-                  <div className='form-group'>
-                    <label>Slippage (%):</label>
-                    <input 
-                      type='number' 
-                      value={withdrawForm.slippage} 
-                      onChange={(e) => handleChange('removeLiquidity', 'slippage', e.target.value)}
-                      min='0.01'
-                      max='100'
-                      step='0.01'
-                    />
-                  </div>
-                  <button 
-                    onClick={() => handleSubmit('removeLiquidity')} 
-                    disabled={loading || !connected}
-                    className='submit-btn'
-                  >
-                    {loading ? 'Removing...' : 'Remove Liquidity'}
-                  </button>
-                </div>
-              </div>
-              
-              {/* Swap Section */}
-              <div className='accordion-item'>
-                <h3 className='accordion-header'>Swap</h3>
-                <div className='accordion-content'>
-                  <div className='form-group'>
-                    <label>From:</label>
-                    <select
-                      value={swapForm.fromToken}
-                      onChange={(e) => handleChange('swap', 'fromToken', e.target.value)}
-                    >
-                      <option value='sol'>SOL</option>
-                      <option value='token'>{selectedToken.symbol || 'Token'}</option>
-                    </select>
-                  </div>
-                  <div className='form-group'>
-                    <label>To:</label>
-                    <div className='static-input'>
-                      {swapForm.fromToken === 'sol' ? (selectedToken.symbol || 'Token') : 'SOL'}
-                    </div>
-                  </div>
-                  <div className='form-group'>
-                    <label>Amount:</label>
-                    <input 
-                      type='number' 
-                      value={swapForm.amount} 
-                      onChange={(e) => handleChange('swap', 'amount', e.target.value)}
-                      min='0.000001'
-                      step='0.000001'
-                    />
-                  </div>
-                  <div className='form-group'>
-                    <label>Slippage (%):</label>
-                    <input 
-                      type='number' 
-                      value={swapForm.slippage} 
-                      onChange={(e) => handleChange('swap', 'slippage', e.target.value)}
-                      min='0.01'
-                      max='100'
-                      step='0.01'
-                    />
-                  </div>
-                  <button 
-                    onClick={() => handleSubmit('swap')} 
-                    disabled={loading || !connected}
-                    className='submit-btn'
-                  >
-                    {loading ? 'Swapping...' : 'Swap'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {activeTab === 'manage' && !selectedToken && (
-          <div className='empty-state'>
-            <h3>No Token Selected</h3>
-            <p>Please select a token from the sidebar to manage.</p>
-          </div>
-        )}
-        
-        {/* Result Section */}
-        {error && <div className='error-container'>{error}</div>}
-        {success && <div className='success-container'>{success}</div>}
-        
-        {result && (
-          <div className='result-container'>
-            <h3>Result:</h3>
-            <pre>{JSON.stringify(result, null, 2)}</pre>
-            {result.txId && (
-              <a 
-                href={getExplorerUrl('tx', result.txId, cluster)} 
-                target='_blank' 
-                rel='noopener noreferrer'
-                className='explorer-link'
-              >
-                View Transaction on Solana Explorer
-              </a>
-            )}
-            {result.mint && (
-              <a 
-                href={getExplorerUrl('address', result.mint, cluster)} 
-                target='_blank' 
-                rel='noopener noreferrer'
-                className='explorer-link'
-                style={{ marginLeft: '10px' }}
-              >
-                View Token on Solana Explorer
-              </a>
-            )}
-            {result.pool && result.pool.poolId && (
-              <a 
-                href={getExplorerUrl('address', result.pool.poolId, cluster)} 
-                target='_blank' 
-                rel='noopener noreferrer'
-                className='explorer-link'
-                style={{ marginLeft: '10px' }}
-              >
-                View Pool on Solana Explorer
-              </a>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };

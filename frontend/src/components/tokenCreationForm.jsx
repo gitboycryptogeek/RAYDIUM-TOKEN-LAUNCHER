@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import './TokenCreationForm.css';
-import { useWallet } from '../components/telegramWalletAdapter';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
@@ -10,6 +10,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const TokenCreationForm = ({ onSuccess, refreshData }) => {
   const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
   const [formData, setFormData] = useState({
     name: '',
     symbol: '',
@@ -107,7 +108,7 @@ const TokenCreationForm = ({ onSuccess, refreshData }) => {
       data.append('description', formData.description);
       data.append('decimals', formData.decimals);
       data.append('initialSupply', formData.initialSupply);
-      data.append('userWallet', publicKey);
+      data.append('userWallet', publicKey.toString());
       
       if (formData.createPool) {
         data.append('initialLiquidity', formData.initialLiquidity);
@@ -287,6 +288,17 @@ const TokenCreationForm = ({ onSuccess, refreshData }) => {
     setSuccess('');
     
     try {
+      // Try to request an airdrop directly from the connection first
+      try {
+        const signature = await connection.requestAirdrop(publicKey, 1 * 1e9); // 1 SOL in lamports
+        await connection.confirmTransaction(signature);
+        setSuccess('Successfully received 1 SOL airdrop.');
+        return;
+      } catch (directAirdropError) {
+        console.warn('Direct airdrop failed, trying API:', directAirdropError);
+      }
+      
+      // If direct airdrop fails, use the API
       // Add retry logic
       let retries = 3;
       let success = false;
@@ -295,7 +307,7 @@ const TokenCreationForm = ({ onSuccess, refreshData }) => {
       while (retries > 0 && !success) {
         try {
           response = await axios.post(`${API_URL}/wallet/airdrop`, {
-            publicKey,
+            publicKey: publicKey.toString(),
             amount: 1
           }, {
             timeout: 60000

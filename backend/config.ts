@@ -17,14 +17,10 @@ const RPC_ENDPOINT = process.env.RPC_ENDPOINT || DEFAULT_ENDPOINT;
 const FALLBACK_ENDPOINTS = {
   devnet: [
     'https://api.devnet.solana.com',
-    'https://devnet.solana.rpcpool.com',
-    'https://devnet.genesysgo.net',
     clusterApiUrl('devnet')
   ],
   mainnet: [
     'https://api.mainnet-beta.solana.com',
-    'https://solana-api.projectserum.com',
-    'https://mainnet.solana.rpcpool.com',
     clusterApiUrl('mainnet-beta')
   ]
 };
@@ -37,7 +33,7 @@ const commitment: Commitment = 'confirmed';
 const connectionConfig: ConnectionConfig = {
   commitment,
   confirmTransactionInitialTimeout: 120000, // Increase timeout to 2 minutes
-  disableRetryOnRateLimit: false,
+  disableRetryOnRateLimit: true,
   httpHeaders: {
     'Content-Type': 'application/json'
   }
@@ -66,15 +62,20 @@ function fallbackToNextEndpoint() {
   currentEndpointIndex = (currentEndpointIndex + 1) % endpoints.length;
   const nextEndpoint = endpoints[currentEndpointIndex];
   
-  console.log(`Trying fallback RPC endpoint: ${nextEndpoint}`);
-  connection = new Connection(nextEndpoint, connectionConfig);
+  // Add a delay before trying the next endpoint
+  console.log(`Will try fallback RPC endpoint in 2 seconds: ${nextEndpoint}`);
   
-  // Verify the new connection works
-  connection.getVersion().catch(error => {
-    console.error(`Error connecting to fallback endpoint ${nextEndpoint}:`, error);
-    // Try next endpoint if this one also fails
-    fallbackToNextEndpoint();
-  });
+  setTimeout(() => {
+    console.log(`Trying fallback RPC endpoint: ${nextEndpoint}`);
+    connection = new Connection(nextEndpoint, connectionConfig);
+    
+    // Verify the new connection works
+    connection.getVersion().catch(error => {
+      console.error(`Error connecting to fallback endpoint ${nextEndpoint}:`, error);
+      // Try next endpoint if this one also fails
+      fallbackToNextEndpoint();
+    });
+  }, 2000); // 2 second delay before trying next endpoint
 }
 
 // Initialize connection

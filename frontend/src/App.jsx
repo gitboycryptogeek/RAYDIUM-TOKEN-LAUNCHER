@@ -4,28 +4,54 @@ import './App.css';
 import Home from './components/Home';
 import TokenCreationForm from './components/tokenCreationForm';
 import PendingPoolManagement from './components/pendingPoolManagement';
-import { TelegramProvider } from './components/telegramApp';
-import TelegramApp from './components/telegramApp';
-import { TelegramWalletAdapterProvider, useWallet } from './components/telegramWalletAdapter';
+import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
+import { ConnectionProvider, WalletProvider, useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { clusterApiUrl } from '@solana/web3.js';
+
+// Import wallet adapter CSS
+import '@solana/wallet-adapter-react-ui/styles.css';
 
 // Navbar Component
 const Navbar = () => {
-  const { publicKey, balance, connected, connecting, connect, disconnect } = useWallet();
+  const { publicKey, connected, disconnect } = useWallet();
+  const { connection } = useConnection();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [balance, setBalance] = useState(0);
+
+  // Fetch balance when connected
+  useEffect(() => {
+    if (publicKey && connection) {
+      const getBalance = async () => {
+        try {
+          const bal = await connection.getBalance(publicKey);
+          setBalance(bal / 1e9); // Convert lamports to SOL
+        } catch (error) {
+          console.error('Error fetching balance:', error);
+        }
+      };
+      
+      getBalance();
+      const interval = setInterval(getBalance, 15000); // Update every 15 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [publicKey, connection]);
 
   // Truncate wallet address for display
   const truncateAddress = (address) => {
     if (!address) return '';
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+    return `${address.toString().substring(0, 6)}...${address.toString().substring(address.toString().length - 4)}`;
   };
   
   // Copy wallet address to clipboard
   const copyToClipboard = async () => {
     if (publicKey) {
       try {
-        await navigator.clipboard.writeText(publicKey);
+        await navigator.clipboard.writeText(publicKey.toString());
         setCopySuccess(true);
         
         // Reset copy success message after 2 seconds
@@ -69,13 +95,7 @@ const Navbar = () => {
 
         <div className="wallet-section">
           {!connected ? (
-            <button 
-              className="connect-wallet-btn"
-              onClick={connect}
-              disabled={connecting}
-            >
-              {connecting ? 'Connecting...' : 'Connect Wallet'}
-            </button>
+            <WalletMultiButton className="connect-wallet-btn" />
           ) : (
             <div className="wallet-info">
               <div className="wallet-address-container">
@@ -203,16 +223,26 @@ function AppContent() {
 }
 
 function App() {
+  // Configure the wallet connection
+  const network = WalletAdapterNetwork.Devnet;
+  const endpoint = process.env.REACT_APP_RPC_ENDPOINT || clusterApiUrl(network);
+  
+  // Set up supported wallets
+  const wallets = [
+    new PhantomWalletAdapter(),
+    new SolflareWalletAdapter()
+  ];
+
   return (
-    <TelegramProvider>
-      <TelegramApp>
-        <TelegramWalletAdapterProvider>
+    <ConnectionProvider endpoint={endpoint}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>
           <BrowserRouter>
             <AppContent />
           </BrowserRouter>
-        </TelegramWalletAdapterProvider>
-      </TelegramApp>
-    </TelegramProvider>
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
   );
 }
 

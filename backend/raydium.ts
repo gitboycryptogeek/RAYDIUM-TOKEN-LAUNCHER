@@ -670,17 +670,42 @@ export async function getPoolsByToken(mintAddress: string): Promise<any[]> {
 }
 
 // Get all pools created by the user
+let poolsCache: any = {
+  data: null,
+  timestamp: 0
+};
+
 export async function getUserPools(): Promise<any[]> {
   try {
     const userWallet = keypair.publicKey.toBase58();
+    
+    // Check if we have cached data less than 5 seconds old
+    const now = Date.now();
+    if (poolsCache.data && now - poolsCache.timestamp < 5000) {
+      console.log('Returning cached pools data');
+      return poolsCache.data;
+    }
+    
     const pools = readPoolsData();
     
     // Filter pools by owner
     const userPools = pools.filter(pool => pool.owner === userWallet);
     console.log(`Found ${userPools.length} pools created by ${userWallet}`);
+    
+    // Update cache
+    poolsCache = {
+      data: userPools,
+      timestamp: now
+    };
+    
     return userPools;
   } catch (error) {
     console.error('Error getting user pools:', error);
+    // Return cached data if available, even if it's older
+    if (poolsCache.data) {
+      console.log('Returning cached pools data after error');
+      return poolsCache.data;
+    }
     return [];
   }
 }

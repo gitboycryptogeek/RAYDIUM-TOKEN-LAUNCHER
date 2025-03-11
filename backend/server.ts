@@ -96,14 +96,26 @@ app.use((req, res, next) => {
 });
 
 // Rate limiting
-const apiLimiter = RateLimit({
+const standardLimiter = RateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again after 15 minutes'
 });
 
+const listEndpointLimiter = RateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 20, // limit to 20 requests per minute
+  message: 'Too many list requests, please try again after 1 minute'
+});
 // Apply rate limiting to all API routes
-app.use('/api', apiLimiter);
+app.use('/api/token/create', standardLimiter);
+app.use('/api/token/create-with-pool', standardLimiter);
+app.use('/api/pool/create', standardLimiter);
+app.use('/api/token/list', listEndpointLimiter);
+app.use('/api/pool/list', listEndpointLimiter);
+app.use('/api/wallet/airdrop', standardLimiter);
+// Apply standard rate limiting to all other API routes
+app.use('/api', standardLimiter);
 
 // Create directory for wallet data
 const WALLETS_DIR = path.join(__dirname, '../data/wallets');

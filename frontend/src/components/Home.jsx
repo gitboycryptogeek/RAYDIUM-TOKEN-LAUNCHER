@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import './Home.css';
-import { useWallet } from '../components/telegramWalletAdapter';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
@@ -353,7 +353,8 @@ const PoolManagementTabs = ({
 
 // Main Home Component
 const Home = () => {
-  const { publicKey, connected, cluster } = useWallet(); 
+  const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
   const [userTokens, setUserTokens] = useState([]);
   const [userPools, setUserPools] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -365,7 +366,7 @@ const Home = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const navigate = useNavigate();
   const { tokenId, poolId } = useParams();
-  
+  const cluster = process.env.REACT_APP_SOLANA_CLUSTER || 'devnet';
   
   const [liquidityForm, setLiquidityForm] = useState({
     amount: '1',
@@ -405,7 +406,7 @@ const Home = () => {
       while (retries > 0 && !success) {
         try {
           const response = await axios.get(`${API_URL}/token/list`, {
-            params: { publicKey },
+            params: { publicKey: publicKey.toString() },
             timeout: 30000
           });
           
@@ -487,7 +488,7 @@ const Home = () => {
       while (retries > 0 && !success) {
         try {
           const response = await axios.get(`${API_URL}/pool/list`, {
-            params: { publicKey },
+            params: { publicKey: publicKey.toString() },
             timeout: 30000
           });
           
@@ -617,9 +618,9 @@ const Home = () => {
   
       const intervalId = setInterval(async () => {
         await fetchUserTokens(false);
-        await delay(1000);
+        await delay(2000);
         await fetchUserPools(false);
-      }, 30000);
+      }, 60000);
   
       return () => clearInterval(intervalId);
     } else {
@@ -724,8 +725,24 @@ const Home = () => {
     setError('');
     
     try {
+      // Try to request airdrop directly first
+      try {
+        const signature = await connection.requestAirdrop(publicKey, 1 * 1e9); // 1 SOL in lamports
+        await connection.confirmTransaction(signature);
+        setSuccess('Successfully received 1 SOL airdrop from devnet.');
+        
+        setTimeout(() => {
+          refreshData();
+        }, 2000);
+        
+        return;
+      } catch (directAirdropError) {
+        console.warn('Direct airdrop failed, trying API:', directAirdropError);
+      }
+      
+      // Fall back to API if direct airdrop fails
       const response = await axios.post(`${API_URL}/wallet/airdrop`, {
-        publicKey,
+        publicKey: publicKey.toString(),
         amount: 1 // Request 1 SOL
       });
       
@@ -782,7 +799,7 @@ const Home = () => {
               ? (isSolTokenB ? 'b' : 'a') 
               : (isSolTokenB ? 'a' : 'b'),
             slippage: parseFloat(liquidityForm.slippage),
-            userWallet: publicKey
+            userWallet: publicKey.toString()
           };
           
           response = await axios.post(`${API_URL}/liquidity/add`, payload);
@@ -806,7 +823,7 @@ const Home = () => {
             poolId: selectedPool.poolId,
             lpAmount: parseFloat(withdrawForm.lpAmount),
             slippage: parseFloat(withdrawForm.slippage),
-            userWallet: publicKey
+            userWallet: publicKey.toString()
           };
           
           response = await axios.post(`${API_URL}/liquidity/remove`, payload);
@@ -830,7 +847,7 @@ const Home = () => {
             amount: parseFloat(swapForm.amount),
             fixedSide: 'in',
             slippage: parseFloat(swapForm.slippage),
-            userWallet: publicKey
+            userWallet: publicKey.toString()
           };
           
           response = await axios.post(`${API_URL}/swap`, payload);
@@ -861,15 +878,15 @@ const Home = () => {
       <div className="dashboard-header">
         <h1>My Token Dashboard</h1>
         <div className="header-actions">
-        {connected && cluster === 'devnet' && (
-  <button 
-    className="airdrop-button" 
-    onClick={requestAirdrop}
-    disabled={airdropLoading}
-  >
-    {airdropLoading ? 'Requesting...' : 'Get 1 SOL'}
-  </button>
-)}
+          {connected && cluster === 'devnet' && (
+            <button 
+              className="airdrop-button" 
+              onClick={requestAirdrop}
+              disabled={airdropLoading}
+            >
+              {airdropLoading ? 'Requesting...' : 'Get 1 SOL'}
+            </button>
+          )}
           <button 
             className="refresh-button" 
             onClick={refreshData}
@@ -957,7 +974,7 @@ const Home = () => {
               </div>
               
               {selectedPool && !selectedPool.isPending && !selectedPool.isPlaceholder ? (
-                <PoolManagementTabs 
+                <PoolManagementTabs
                   selectedToken={selectedToken}
                   selectedPool={selectedPool}
                   handleSubmit={handleSubmit}

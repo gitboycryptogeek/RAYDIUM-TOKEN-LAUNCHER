@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { useWallet } from '../components/telegramWalletAdapter';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
@@ -21,10 +21,12 @@ const PendingPoolManagement = ({ token, onPoolCreated }) => {
   
   // Memoize fetchUserTokens with useCallback
   const fetchUserTokens = useCallback(async () => {
+    if (!connected || !publicKey) return;
+    
     setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/token/list`, {
-        params: { publicKey }
+        params: { publicKey: publicKey.toString() }
       });
       
       if (response.data && Array.isArray(response.data)) {
@@ -44,10 +46,32 @@ const PendingPoolManagement = ({ token, onPoolCreated }) => {
     } catch (error) {
       console.error('Error fetching tokens:', error);
       setError('Failed to fetch your tokens. Please try again.');
+      
+      // Try to load from localStorage as fallback
+      try {
+        const localTokens = localStorage.getItem('localTokens');
+        if (localTokens) {
+          const parsedTokens = JSON.parse(localTokens);
+          if (Array.isArray(parsedTokens) && parsedTokens.length > 0) {
+            setAvailableTokens(parsedTokens);
+            
+            if (tokenId) {
+              const foundToken = parsedTokens.find(t => t.mint === tokenId);
+              if (foundToken) {
+                setSelectedToken(foundToken);
+              }
+            } else if (parsedTokens.length > 0) {
+              setSelectedToken(parsedTokens[0]);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error loading from localStorage:', e);
+      }
     } finally {
       setLoading(false);
     }
-  }, [publicKey, tokenId]);
+  }, [publicKey, tokenId, connected]);
   
   // Fetch tokens if no token provided
   useEffect(() => {
@@ -105,7 +129,7 @@ const PendingPoolManagement = ({ token, onPoolCreated }) => {
         quoteMint: solMint,
         baseAmount: parseFloat(formData.baseAmount),
         quoteAmount: parseFloat(formData.quoteAmount),
-        userWallet: publicKey
+        userWallet: publicKey.toString()
       });
       
       if (response.data.error) {
@@ -169,7 +193,7 @@ const PendingPoolManagement = ({ token, onPoolCreated }) => {
         quoteMint: solMint,
         baseAmount: parseFloat(formData.baseAmount),
         quoteAmount: parseFloat(formData.quoteAmount),
-        userWallet: publicKey
+        userWallet: publicKey.toString()
       });
       
       if (response.data.error) {

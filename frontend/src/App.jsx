@@ -1,25 +1,41 @@
-import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
 import Home from './components/Home';
 import TokenCreationForm from './components/tokenCreationForm';
 import PendingPoolManagement from './components/pendingPoolManagement';
 import { TelegramProvider } from './components/telegramApp';
 import TelegramApp from './components/telegramApp';
-import { TelegramWalletAdapterProvider } from './components/telegramWalletAdapter';
-import { useWallet } from './components/telegramWalletAdapter';
-import { Link, useLocation } from 'react-router-dom';
+import { TelegramWalletAdapterProvider, useWallet } from './components/telegramWalletAdapter';
 
 // Navbar Component
 const Navbar = () => {
   const { publicKey, balance, connected, connecting, connect, disconnect } = useWallet();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // Truncate wallet address for display
   const truncateAddress = (address) => {
     if (!address) return '';
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  };
+  
+  // Copy wallet address to clipboard
+  const copyToClipboard = async () => {
+    if (publicKey) {
+      try {
+        await navigator.clipboard.writeText(publicKey);
+        setCopySuccess(true);
+        
+        // Reset copy success message after 2 seconds
+        setTimeout(() => {
+          setCopySuccess(false);
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy address: ', err);
+      }
+    }
   };
 
   return (
@@ -62,14 +78,22 @@ const Navbar = () => {
             </button>
           ) : (
             <div className="wallet-info">
-              <div className="wallet-address">
-                {truncateAddress(publicKey)}
+              <div className="wallet-address-container">
+                <div className="wallet-address" onClick={copyToClipboard}>
+                  {truncateAddress(publicKey)}
+                  <span className="copy-icon" title="Copy full address">📋</span>
+                  {copySuccess && <span className="copy-success">Copied!</span>}
+                </div>
+                <div className="wallet-balance">
+                  {balance?.toFixed(4) || '0'} SOL
+                </div>
               </div>
-              <div className="wallet-balance">
-                {balance?.toFixed(4) || '0'} SOL
-              </div>
-              <button className="disconnect-btn" onClick={disconnect}>
-                <span className="disconnect-icon">⏻</span>
+              <button 
+                className="disconnect-btn" 
+                onClick={disconnect}
+                title="Disconnect wallet"
+              >
+                Disconnect
               </button>
             </div>
           )}
@@ -102,9 +126,10 @@ function AppContent() {
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Open modals based on route
-  React.useEffect(() => {
+  useEffect(() => {
     if (location.pathname === '/create-token') {
       setIsTokenModalOpen(true);
     } else if (location.pathname === '/create-pool') {
@@ -114,6 +139,29 @@ function AppContent() {
       setIsPoolModalOpen(false);
     }
   }, [location]);
+
+  // Handle modal closing
+  const handleTokenModalClose = () => {
+    setIsTokenModalOpen(false);
+    navigate('/');
+  };
+
+  const handlePoolModalClose = () => {
+    setIsPoolModalOpen(false);
+    navigate('/');
+  };
+
+  // Handle token creation success
+  const handleTokenCreationSuccess = (tokenData) => {
+    setIsTokenModalOpen(false);
+    navigate('/');
+  };
+
+  // Handle pool creation success
+  const handlePoolCreated = (poolData) => {
+    setIsPoolModalOpen(false);
+    navigate('/');
+  };
 
   return (
     <div className="app-container">
@@ -132,19 +180,19 @@ function AppContent() {
       {/* Token Creation Modal */}
       <Modal 
         isOpen={isTokenModalOpen} 
-        onClose={() => setIsTokenModalOpen(false)}
+        onClose={handleTokenModalClose}
         title="Create New Token"
       >
-        <TokenCreationForm onSuccess={() => setIsTokenModalOpen(false)} />
+        <TokenCreationForm onSuccess={handleTokenCreationSuccess} />
       </Modal>
 
       {/* Pool Creation Modal */}
       <Modal 
         isOpen={isPoolModalOpen} 
-        onClose={() => setIsPoolModalOpen(false)}
+        onClose={handlePoolModalClose}
         title="Create New Pool"
       >
-        <PendingPoolManagement onPoolCreated={() => setIsPoolModalOpen(false)} />
+        <PendingPoolManagement onPoolCreated={handlePoolCreated} />
       </Modal>
 
       <footer className="app-footer">

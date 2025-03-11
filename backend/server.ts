@@ -105,7 +105,7 @@ const standardLimiter = RateLimit({
 const listEndpointLimiter = RateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 20, // limit to 20 requests per minute
-  message: 'Too many list requests, please try again after 1 minute'
+  message: 'Too many list requests, please try again after 1 minute.'
 });
 // Apply rate limiting to all API routes
 app.use('/api/token/create', standardLimiter);
